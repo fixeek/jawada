@@ -1,0 +1,55 @@
+export default {
+  content: ["./index.html","./src/**/*.{js,jsx}"],
+  theme: { extend: {
+    colors: {
+      navy: {
+        DEFAULT: "#0D2137",
+        50:  "#F0F4F8",
+        100: "#D9E2EC",
+        200: "#BCCCDC",
+        300: "#9FB3C8",
+        400: "#1F4E79",
+        500: "#0D2137",
+        600: "#091A2C",
+        700: "#061220",
+        800: "#040D18",
+        900: "#020810",
+      },
+      teal: {
+        DEFAULT: "#0D9488",
+        50:  "#ECFDF5",
+        100: "#D1FAE5",
+        200: "#6EE7B7",
+        300: "#14B8A6",
+        400: "#0D9488",
+        500: "#0F766E",
+        600: "#115E59",
+      },
+    },
+    fontFamily: {
+      sans: ['Inter', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'sans-serif'],
+    },
+    boxShadow: {
+      'card':       '0 1px 3px rgba(13,33,55,0.04), 0 1px 2px rgba(13,33,55,0.03)',
+      'card-hover': '0 20px 40px rgba(13,33,55,0.08), 0 8px 16px rgba(13,33,55,0.04)',
+      'elevated':   '0 4px 12px rgba(13,33,55,0.06), 0 1px 3px rgba(13,33,55,0.04)',
+      'modal':      '0 25px 60px rgba(13,33,55,0.2), 0 10px 20px rgba(13,33,55,0.08)',
+      'glow':       '0 0 24px rgba(13,148,136,0.2)',
+      'glow-lg':    '0 0 40px rgba(13,148,136,0.15), 0 0 80px rgba(13,148,136,0.05)',
+      'inner-glow': 'inset 0 1px 0 rgba(255,255,255,0.1)',
+    },
+    animation: {
+      'fade-in':    'fadeIn 0.5s ease-out',
+      'slide-up':   'slideUp 0.5s cubic-bezier(0.16,1,0.3,1)',
+      'scale-in':   'scaleIn 0.35s cubic-bezier(0.16,1,0.3,1)',
+      'float':      'float 6s ease-in-out infinite',
+    },
+    keyframes: {
+      fadeIn:  { '0%': { opacity: '0' }, '100%': { opacity: '1' } },
+      slideUp: { '0%': { opacity: '0', transform: 'translateY(16px)' }, '100%': { opacity: '1', transform: 'translateY(0)' } },
+      scaleIn: { '0%': { opacity: '0', transform: 'scale(0.96)' }, '100%': { opacity: '1', transform: 'scale(1)' } },
+      float:   { '0%,100%': { transform: 'translateY(0)' }, '50%': { transform: 'translateY(-8px)' } },
+    },
+  }},
+  plugins: [],
+}

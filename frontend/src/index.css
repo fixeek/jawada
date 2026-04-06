@@ -1,0 +1,58 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    scroll-behavior: smooth;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  body {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    color: #0D2137;
+  }
+
+  ::selection {
+    background-color: rgba(13, 148, 136, 0.15);
+    color: #0D2137;
+  }
+}
+
+@layer utilities {
+  .text-gradient {
+    @apply bg-clip-text text-transparent bg-gradient-to-r from-teal-400 to-emerald-400;
+  }
+
+  .bg-mesh {
+    background-image:
+      radial-gradient(at 20% 20%, rgba(13,148,136,0.06) 0px, transparent 50%),
+      radial-gradient(at 80% 10%, rgba(13,33,55,0.04) 0px, transparent 50%),
+      radial-gradient(at 50% 80%, rgba(13,148,136,0.04) 0px, transparent 50%);
+  }
+
+  .bg-grid {
+    background-image: linear-gradient(rgba(13,33,55,0.02) 1px, transparent 1px),
+                      linear-gradient(90deg, rgba(13,33,55,0.02) 1px, transparent 1px);
+    background-size: 32px 32px;
+  }
+
+  .shimmer {
+    position: relative;
+    overflow: hidden;
+  }
+  .shimmer::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(90deg, transparent, rgba(255,255,255,0.08), transparent);
+    animation: shimmer 2.5s infinite;
+  }
+  @keyframes shimmer {
+    0% { transform: translateX(-100%); }
+    100% { transform: translateX(100%); }
+  }
+}

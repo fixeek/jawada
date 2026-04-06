@@ -1,0 +1,515 @@
+import { useState } from 'react'
+import { LayoutDashboard, Upload, ScrollText, Settings, Building, ChevronLeft,
+         ChevronRight, Activity, Shield, Menu, X, Target, ClipboardList,
+         FileWarning, BarChart3, Sparkles, ChevronRight as ArrowRight,
+         Users as UsersIcon, LogOut, User as UserIcon, Server, Home } from 'lucide-react'
+import UploadPage from './pages/UploadPage'
+import Dashboard from './pages/Dashboard'
+import AuditPage from './pages/AuditPage'
+import LoginPage from './pages/LoginPage'
+import ChangePasswordPage from './pages/ChangePasswordPage'
+import AdminOverviewPage from './pages/AdminOverviewPage'
+import AdminClinicsPage from './pages/AdminClinicsPage'
+import AdminClinicDetailPage from './pages/AdminClinicDetailPage'
+import AdminAuditPage from './pages/AdminAuditPage'
+import AdminHealthPage from './pages/AdminHealthPage'
+import UsersPage from './pages/UsersPage'
+import { AuthProvider, useAuth, ROLES, ROLE_LABELS, isSuperAdmin, canManageUsers, canUpload } from './utils/auth'
+
+function getNavItems(user) {
+  // Super admin has a completely different menu — platform management
+  if (isSuperAdmin(user)) {
+    return [
+      { id: 'overview', label: 'Overview', icon: Home },
+      { id: 'clinics', label: 'Clinics', icon: Building },
+      { id: 'audit', label: 'Platform Audit', icon: ScrollText },
+      { id: 'health', label: 'System Health', icon: Server },
+      { id: 'settings', label: 'Settings', icon: Settings },
+    ]
+  }
+
+  // Clinic users (admin, quality officer, viewer)
+  const items = [
+    { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
+  ]
+  if (canUpload(user)) {
+    items.push({ id: 'upload', label: 'Upload & Calculate', icon: Upload })
+  }
+  items.push({ id: 'audit', label: 'Audit Trail', icon: ScrollText })
+
+  if (canManageUsers(user)) {
+    items.push({ id: 'users', label: 'Users', icon: UsersIcon })
+  }
+  items.push({ id: 'settings', label: 'Settings', icon: Settings })
+  return items
+}
+
+function Sidebar({ active, onNavigate, collapsed, onCollapse, user, onLogout }) {
+  const navItems = getNavItems(user)
+
+  return (
+    <aside className={`bg-navy-500 flex flex-col h-screen sticky top-0 transition-all duration-300 ${
+      collapsed ? 'w-[68px]' : 'w-[240px]'
+    }`}>
+      <div className="px-4 py-5 flex items-center gap-3 border-b border-white/5">
+        <div className="w-9 h-9 bg-gradient-to-br from-teal-300 to-teal-500 rounded-xl flex items-center justify-center shadow-glow flex-shrink-0">
+          <span className="text-white text-sm font-black">J</span>
+        </div>
+        {!collapsed && (
+          <div className="overflow-hidden">
+            <div className="text-white font-bold text-sm tracking-tight">Jawda KPI</div>
+            <div className="text-navy-300 text-[9px] font-medium tracking-wide uppercase">by TriZodiac</div>
+          </div>
+        )}
+      </div>
+
+      {/* Facility badge */}
+      {user?.facility_name && !collapsed && (
+        <div className="px-4 py-3 border-b border-white/5">
+          <div className="flex items-center gap-2">
+            <Building size={13} className="text-teal-300 flex-shrink-0" />
+            <span className="text-xs text-navy-200 font-medium truncate">{user.facility_name}</span>
+          </div>
+        </div>
+      )}
+      {isSuperAdmin(user) && !collapsed && (
+        <div className="px-4 py-3 border-b border-white/5">
+          <div className="flex items-center gap-2">
+            <Shield size={13} className="text-amber-300 flex-shrink-0" />
+            <span className="text-xs text-amber-200 font-bold">Super Admin</span>
+          </div>
+        </div>
+      )}
+
+      {/* Nav items */}
+      <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
+        {navItems.map(({ id, label, icon: Icon }) => (
+          <button
+            key={id}
+            onClick={() => onNavigate(id)}
+            className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all ${
+              active === id
+                ? 'bg-white/10 text-white shadow-inner-glow'
+                : 'text-navy-300 hover:text-white hover:bg-white/5'
+            }`}
+            title={collapsed ? label : undefined}
+          >
+            <Icon size={18} className="flex-shrink-0" />
+            {!collapsed && <span>{label}</span>}
+            {active === id && !collapsed && (
+              <div className="ml-auto w-1.5 h-1.5 rounded-full bg-teal-400" />
+            )}
+          </button>
+        ))}
+      </nav>
+
+      {/* User info + logout */}
+      <div className="px-3 py-4 border-t border-white/5 space-y-2">
+        {!collapsed && user && (
+          <div className="px-3 py-2">
+            <div className="flex items-center gap-2 mb-1">
+              <div className="w-6 h-6 bg-white/10 rounded-full flex items-center justify-center flex-shrink-0">
+                <UserIcon size={11} className="text-teal-300" />
+              </div>
+              <div className="overflow-hidden">
+                <p className="text-xs text-white font-bold truncate">{user.full_name || user.email}</p>
+                <p className="text-[10px] text-navy-300 truncate">{ROLE_LABELS[user.role]}</p>
+              </div>
+            </div>
+          </div>
+        )}
+        <button
+          onClick={onLogout}
+          className="w-full flex items-center gap-3 px-3 py-2 rounded-xl text-navy-300 hover:text-white hover:bg-white/5 transition-all text-sm font-medium"
+          title={collapsed ? 'Logout' : undefined}
+        >
+          <LogOut size={16} className="flex-shrink-0" />
+          {!collapsed && <span>Logout</span>}
+        </button>
+        <button
+          onClick={onCollapse}
+          className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-xl text-navy-400 hover:text-navy-200 hover:bg-white/5 transition-all"
+          title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+        >
+          {collapsed ? <ChevronRight size={16} /> : <><ChevronLeft size={16} /><span className="text-xs">Collapse</span></>}
+        </button>
+      </div>
+    </aside>
+  )
+}
+
+function MobileNav({ active, onNavigate, user, onLogout }) {
+  const [open, setOpen] = useState(false)
+  const navItems = getNavItems(user)
+  return (
+    <>
+      <div className="lg:hidden bg-navy-500 px-4 py-3 flex items-center justify-between sticky top-0 z-20">
+        <div className="flex items-center gap-3">
+          <div className="w-8 h-8 bg-gradient-to-br from-teal-300 to-teal-500 rounded-lg flex items-center justify-center">
+            <span className="text-white text-xs font-black">J</span>
+          </div>
+          <span className="text-white font-bold text-sm">Jawda KPI</span>
+        </div>
+        <button onClick={() => setOpen(!open)} className="text-white p-1">
+          {open ? <X size={22} /> : <Menu size={22} />}
+        </button>
+      </div>
+      {open && (
+        <div className="lg:hidden bg-navy-500 px-4 pb-3 space-y-1 sticky top-[52px] z-20 border-b border-white/10">
+          {user && (
+            <div className="px-3 py-3 border-b border-white/10 mb-2">
+              <p className="text-xs text-white font-bold">{user.full_name || user.email}</p>
+              <p className="text-[10px] text-navy-300">{ROLE_LABELS[user.role]} {user.facility_name && `· ${user.facility_name}`}</p>
+            </div>
+          )}
+          {navItems.map(({ id, label, icon: Icon }) => (
+            <button
+              key={id}
+              onClick={() => { onNavigate(id); setOpen(false) }}
+              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium ${
+                active === id ? 'bg-white/10 text-white' : 'text-navy-300'
+              }`}
+            >
+              <Icon size={16} /> {label}
+            </button>
+          ))}
+          <button
+            onClick={() => { onLogout(); setOpen(false) }}
+            className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium text-navy-300 mt-2 border-t border-white/10 pt-3"
+          >
+            <LogOut size={16} /> Logout
+          </button>
+        </div>
+      )}
+    </>
+  )
+}
+
+function SettingsPage({ user }) {
+  const isSA = isSuperAdmin(user)
+  return (
+    <div className="max-w-4xl mx-auto px-6 py-10">
+      <div className="flex items-center gap-4 mb-8">
+        <div className="w-14 h-14 bg-gradient-to-br from-gray-50 to-gray-100 rounded-2xl flex items-center justify-center shadow-card">
+          <Settings size={24} className="text-gray-500" />
+        </div>
+        <div>
+          <h1 className="text-2xl font-black text-navy-500 tracking-tight">Settings</h1>
+          <p className="text-sm text-gray-500">{isSA ? 'Platform configuration and your account' : 'Your account and clinic preferences'}</p>
+        </div>
+      </div>
+
+      <div className="space-y-6">
+        {/* Account section — for everyone */}
+        <div className="bg-white rounded-2xl border border-gray-100 shadow-card p-6">
+          <h3 className="text-sm font-bold text-navy-500 mb-4 flex items-center gap-2">
+            <UserIcon size={14} className="text-blue-500" /> Your Account
+          </h3>
+          <div className="space-y-3 text-sm">
+            <div className="flex justify-between py-2 border-b border-gray-50">
+              <span className="text-gray-500">Name</span>
+              <span className="font-bold text-navy-500">{user?.full_name || '—'}</span>
+            </div>
+            <div className="flex justify-between py-2 border-b border-gray-50">
+              <span className="text-gray-500">Email</span>
+              <span className="font-bold text-navy-500">{user?.email}</span>
+            </div>
+            <div className="flex justify-between py-2 border-b border-gray-50">
+              <span className="text-gray-500">Role</span>
+              <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${
+                isSA ? 'bg-amber-50 text-amber-700' : 'bg-blue-50 text-blue-700'
+              }`}>{ROLE_LABELS[user?.role]}</span>
+            </div>
+            {user?.facility_name && (
+              <div className="flex justify-between py-2">
+                <span className="text-gray-500">Facility</span>
+                <span className="font-bold text-navy-500">{user.facility_name}</span>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Super admin platform configuration */}
+        {isSA && (
+          <>
+            <div className="bg-white rounded-2xl border border-gray-100 shadow-card p-6">
+              <h3 className="text-sm font-bold text-navy-500 mb-4 flex items-center gap-2">
+                <Target size={14} className="text-teal-500" /> DOH KPI Targets
+              </h3>
+              <p className="text-xs text-gray-500 mb-4">Default target thresholds applied to all clinics. From DOH Jawda Guidance V2 2026.</p>
+              <div className="space-y-2 text-sm">
+                {[
+                  ['OMC001', 'Asthma Medication Ratio', '≥ 50%'],
+                  ['OMC002', 'Avoidance of Antibiotics', '≥ 50%'],
+                  ['OMC003', 'Time to See Physician', '≥ 80%'],
+                  ['OMC004', 'BMI Counselling', '≥ 50%'],
+                  ['OMC005', 'HbA1c ≤ 8.0%', '> 36%'],
+                  ['OMC006', 'BP < 130/80', '≥ 50%'],
+                  ['OMC007', 'Opioid Use Risk', '≤ 10%'],
+                  ['OMC008', 'eGFR + uACR', '≥ 50%'],
+                ].map(([id, name, target]) => (
+                  <div key={id} className="flex items-center justify-between py-2 border-b border-gray-50">
+                    <div className="flex items-center gap-3">
+                      <span className="text-xs font-black text-navy-300">{id}</span>
+                      <span className="text-xs text-gray-600">{name}</span>
+                    </div>
+                    <span className="text-xs font-bold text-teal-700 bg-teal-50 px-2 py-0.5 rounded">{target}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="bg-white rounded-2xl border border-gray-100 shadow-card p-6">
+              <h3 className="text-sm font-bold text-navy-500 mb-4 flex items-center gap-2">
+                <Shield size={14} className="text-emerald-500" /> Security & Compliance
+              </h3>
+              <div className="space-y-3 text-sm">
+                <div className="flex justify-between py-2 border-b border-gray-50">
+                  <span className="text-gray-500">Password policy</span>
+                  <span className="font-bold text-navy-500">Min 8 characters</span>
+                </div>
+                <div className="flex justify-between py-2 border-b border-gray-50">
+                  <span className="text-gray-500">Session expiry</span>
+                  <span className="font-bold text-navy-500">12 hours</span>
+                </div>
+                <div className="flex justify-between py-2 border-b border-gray-50">
+                  <span className="text-gray-500">First login</span>
+                  <span className="font-bold text-navy-500">Force password change</span>
+                </div>
+                <div className="flex justify-between py-2">
+                  <span className="text-gray-500">Audit retention</span>
+                  <span className="font-bold text-navy-500">Indefinite</span>
+                </div>
+              </div>
+            </div>
+          </>
+        )}
+
+        {/* Platform info — for everyone */}
+        <div className="bg-white rounded-2xl border border-gray-100 shadow-card p-6">
+          <h3 className="text-sm font-bold text-navy-500 mb-4 flex items-center gap-2">
+            <Activity size={14} className="text-violet-500" /> Platform Information
+          </h3>
+          <div className="space-y-3 text-sm">
+            <div className="flex justify-between py-2 border-b border-gray-50">
+              <span className="text-gray-500">Product</span>
+              <span className="font-bold text-navy-500">Jawda KPI Platform</span>
+            </div>
+            <div className="flex justify-between py-2 border-b border-gray-50">
+              <span className="text-gray-500">Developer</span>
+              <span className="font-bold text-navy-500">TriZodiac</span>
+            </div>
+            <div className="flex justify-between py-2 border-b border-gray-50">
+              <span className="text-gray-500">DOH Guidance</span>
+              <span className="font-bold text-navy-500">V2 2026</span>
+            </div>
+            <div className="flex justify-between py-2 border-b border-gray-50">
+              <span className="text-gray-500">Data Region</span>
+              <span className="font-bold text-navy-500">UAE North (Abu Dhabi)</span>
+            </div>
+            <div className="flex justify-between py-2">
+              <span className="text-gray-500">Compliance</span>
+              <span className="font-bold text-navy-500">ADHICS V2</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function AppShell() {
+  const { user, loading, logout } = useAuth()
+  const [page, setPage] = useState('dashboard')
+  const [results, setResults] = useState(null)
+  const [collapsed, setCollapsed] = useState(false)
+  const [selectedClinic, setSelectedClinic] = useState(null)
+
+  // Set default page based on role
+  const defaultPage = isSuperAdmin(user) ? 'overview' : 'dashboard'
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <span className="w-8 h-8 border-2 border-navy-200 border-t-navy-500 rounded-full animate-spin" />
+      </div>
+    )
+  }
+
+  if (!user) {
+    return <LoginPage />
+  }
+
+  if (user.must_change_password) {
+    return <ChangePasswordPage />
+  }
+
+  // If page is the default 'dashboard' but user is super admin, redirect to overview
+  if (page === 'dashboard' && isSuperAdmin(user)) {
+    setPage('overview')
+    return null
+  }
+
+  function handleResults(data) {
+    setResults(data)
+    setPage('dashboard')
+  }
+
+  function renderPage() {
+    // Super admin pages
+    if (isSuperAdmin(user)) {
+      switch (page) {
+        case 'overview':
+          return <AdminOverviewPage onNavigate={setPage} />
+        case 'clinics':
+          return selectedClinic
+            ? <AdminClinicDetailPage facility={selectedClinic} onBack={() => setSelectedClinic(null)} />
+            : <AdminClinicsPage onSelectClinic={setSelectedClinic} />
+        case 'audit':
+          return <AdminAuditPage />
+        case 'health':
+          return <AdminHealthPage />
+        case 'settings':
+          return <SettingsPage user={user} />
+        default:
+          return <AdminOverviewPage onNavigate={setPage} />
+      }
+    }
+
+    // Clinic user pages
+    switch (page) {
+      case 'dashboard':
+        return results ? (
+          <Dashboard
+            results={results}
+            onBack={() => setPage('upload')}
+            onAudit={() => setPage('audit')}
+          />
+        ) : (
+          <div className="min-h-screen relative overflow-hidden">
+            <div className="absolute top-0 right-0 w-[500px] h-[500px] bg-gradient-to-bl from-teal-50/60 to-transparent rounded-full -translate-y-1/3 translate-x-1/4 pointer-events-none" />
+            <div className="absolute bottom-0 left-0 w-[400px] h-[400px] bg-gradient-to-tr from-navy-50/40 to-transparent rounded-full translate-y-1/3 -translate-x-1/4 pointer-events-none" />
+
+            <div className="relative max-w-5xl mx-auto px-6 py-16">
+              <div className="text-center mb-12">
+                <div className="inline-flex items-center gap-2 bg-gradient-to-r from-teal-50 to-emerald-50 text-teal-700 text-xs font-bold px-4 py-2 rounded-full mb-6 border border-teal-100/60 shadow-sm">
+                  <Sparkles size={13} className="text-teal-500" />
+                  Welcome back, {user.full_name?.split(' ')[0] || 'there'}
+                </div>
+                <h1 className="text-4xl sm:text-5xl font-black text-navy-500 mb-5 tracking-tight leading-[1.1]">
+                  Jawda KPI
+                  <span className="bg-clip-text text-transparent bg-gradient-to-r from-teal-400 to-emerald-400 block sm:inline sm:ml-3">Reporting</span>
+                </h1>
+                <p className="text-gray-500 text-base leading-relaxed max-w-xl mx-auto mb-10">
+                  Upload your clinic data files. Get instant Jawda readiness
+                  assessment with pass/fail per KPI and a prioritised action plan.
+                </p>
+
+                {canUpload(user) && (
+                  <button
+                    onClick={() => setPage('upload')}
+                    className="bg-gradient-to-r from-navy-500 via-navy-400 to-navy-500 bg-[length:200%_100%] text-white
+                      font-bold text-sm px-8 py-4 rounded-xl shadow-elevated hover:shadow-card-hover hover:bg-right
+                      transition-all duration-300 inline-flex items-center gap-2"
+                  >
+                    Upload & Calculate KPIs <ArrowRight size={16} />
+                  </button>
+                )}
+              </div>
+
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-12">
+                {[
+                  { icon: Target, label: 'Pass / Fail', sub: 'Per-KPI vs DOH target', color: 'text-teal-500', bg: 'from-teal-50 to-emerald-50' },
+                  { icon: ClipboardList, label: 'Action Plan', sub: 'Prioritised fix list', color: 'text-blue-500', bg: 'from-blue-50 to-indigo-50' },
+                  { icon: FileWarning, label: 'Data Gaps', sub: '17-field completeness', color: 'text-amber-500', bg: 'from-amber-50 to-orange-50' },
+                  { icon: BarChart3, label: 'Submission File', sub: 'DOH-ready export', color: 'text-violet-500', bg: 'from-violet-50 to-purple-50' },
+                ].map(({ icon: Icon, label, sub, color, bg }) => (
+                  <div key={label} className="bg-white rounded-2xl border border-gray-100 shadow-card hover:shadow-elevated transition-all p-5 group cursor-pointer"
+                    onClick={() => canUpload(user) && setPage('upload')}>
+                    <div className={`w-12 h-12 bg-gradient-to-br ${bg} rounded-xl flex items-center justify-center mb-4 group-hover:scale-105 transition-transform`}>
+                      <Icon size={20} className={color} />
+                    </div>
+                    <h3 className="text-sm font-bold text-navy-500 mb-1">{label}</h3>
+                    <p className="text-xs text-gray-500">{sub}</p>
+                  </div>
+                ))}
+              </div>
+
+              <div className="flex flex-wrap items-center justify-center gap-4 sm:gap-8 text-xs text-gray-500">
+                <div className="flex items-center gap-2">
+                  <Shield size={14} className="text-teal-400" />
+                  <span className="font-medium">ADHICS Compliant</span>
+                </div>
+                <div className="hidden sm:block w-px h-4 bg-gray-200" />
+                <div className="flex items-center gap-2">
+                  <Activity size={14} className="text-teal-400" />
+                  <span className="font-medium">DOH V2 2026</span>
+                </div>
+                <div className="hidden sm:block w-px h-4 bg-gray-200" />
+                <div className="flex items-center gap-2">
+                  <Building size={14} className="text-teal-400" />
+                  <span className="font-medium">UAE North Region</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        )
+
+      case 'upload':
+        return canUpload(user)
+          ? <UploadPage onResults={handleResults} facility={user.facility_name} />
+          : <div className="p-10 text-center text-gray-500">You don't have permission to upload data.</div>
+
+      case 'audit':
+        return <AuditPage facility={user.facility_name || results?.facility} onBack={() => setPage('dashboard')} />
+
+      case 'clinics':
+        if (!isSuperAdmin(user)) return null
+        return selectedClinic
+          ? <AdminClinicDetailPage facility={selectedClinic} onBack={() => setSelectedClinic(null)} />
+          : <AdminClinicsPage onSelectClinic={setSelectedClinic} />
+
+      case 'users':
+        return canManageUsers(user) ? <UsersPage /> : null
+
+      case 'settings':
+        return <SettingsPage user={user} />
+
+      default:
+        return null
+    }
+  }
+
+  return (
+    <div className="min-h-screen bg-white bg-mesh">
+      <div className="hidden lg:flex">
+        <Sidebar
+          active={page}
+          onNavigate={setPage}
+          collapsed={collapsed}
+          onCollapse={() => setCollapsed(!collapsed)}
+          user={user}
+          onLogout={logout}
+        />
+        <main className="flex-1 min-h-screen overflow-auto">
+          {renderPage()}
+        </main>
+      </div>
+
+      <div className="lg:hidden">
+        <MobileNav active={page} onNavigate={setPage} user={user} onLogout={logout} />
+        <main className="min-h-screen">
+          {renderPage()}
+        </main>
+      </div>
+    </div>
+  )
+}
+
+export default function App() {
+  return (
+    <AuthProvider>
+      <AppShell />
+    </AuthProvider>
+  )
+}
