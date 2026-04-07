@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Mail, Lock, AlertCircle, ChevronRight, Sparkles, Shield, Activity, Building } from 'lucide-react'
 import { useAuth } from '../utils/auth'
+import { getErrorMessage } from '../utils/errors'
 
 export default function LoginPage() {
   const { login } = useAuth()
@@ -16,7 +17,7 @@ export default function LoginPage() {
     try {
       await login(email, password)
     } catch (err) {
-      setError(err.response?.data?.detail || 'Login failed. Check your credentials.')
+      setError(getErrorMessage(err, 'Login failed. Check your credentials.'))
     } finally {
       setLoading(false)
     }

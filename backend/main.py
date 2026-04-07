@@ -19,7 +19,7 @@ from fastapi.responses import JSONResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 import pandas as pd
-import tempfile, os, json, uuid
+import tempfile, os, json, uuid, secrets, string
 from datetime import datetime
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from engine.kpi_engine import run_all_kpis, load_file, normalise_df, map_columns
@@ -48,6 +48,7 @@ try:
         create_user, list_users_for_facility, list_all_facilities, create_facility,
         update_user_password, update_last_login, delete_user, deactivate_user,
         reactivate_user, deactivate_facility, reactivate_facility, seed_super_admin,
+        EmailAlreadyExistsError,
         ROLE_SUPER_ADMIN, ROLE_CLINIC_ADMIN, ROLE_QUALITY_OFFICER, ROLE_VIEWER, ALL_ROLES
     )
     USE_AUTH = USE_DB
@@ -58,11 +59,95 @@ except Exception as e:
     log.warning(f"⚠ Auth unavailable: {e}")
     USE_AUTH = False
 
+# Email service (graceful fallback if not configured)
+try:
+    from email_service import (
+        send_welcome_email, send_kpi_calculation_email, send_password_changed_email,
+        send_password_reset_email,
+        is_enabled as email_is_enabled
+    )
+    USE_EMAIL = True
+except Exception as e:
+    log.warning(f"⚠ Email service unavailable: {e}")
+    USE_EMAIL = False
+    def send_welcome_email(*args, **kwargs): return False
+    def send_kpi_calculation_email(*args, **kwargs): return False
+    def send_password_changed_email(*args, **kwargs): return False
+    def send_password_reset_email(*args, **kwargs): return False
+
 app = FastAPI(
     title="Jawda KPI Platform",
     description="DOH Jawda KPI Reporting Engine — v1.4 (Q1 2025)",
     version="1.0.0"
 )
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# Global exception handlers — always return clean {"detail": "..."} JSON
+# ─────────────────────────────────────────────────────────────────────────
+
+from fastapi.responses import JSONResponse as _JSONResponse
+from fastapi.requests import Request as _Request
+from fastapi.exceptions import RequestValidationError as _RequestValidationError
+from starlette.exceptions import HTTPException as _StarletteHTTPException
+import traceback as _traceback
+
+
+@app.exception_handler(_StarletteHTTPException)
+async def _http_exception_handler(request: _Request, exc: _StarletteHTTPException):
+    """Format HTTPExceptions as clean {"detail": "..."}."""
+    return _JSONResponse(
+        status_code=exc.status_code,
+        content={"detail": exc.detail if isinstance(exc.detail, str) else str(exc.detail)},
+    )
+
+
+@app.exception_handler(_RequestValidationError)
+async def _validation_exception_handler(request: _Request, exc: _RequestValidationError):
+    """Convert pydantic validation errors to a single readable message."""
+    errors = exc.errors()
+    if errors:
+        first = errors[0]
+        loc = ".".join(str(p) for p in first.get("loc", []) if p != "body")
+        msg = first.get("msg", "Validation failed")
+        if loc:
+            detail = f"{loc}: {msg}"
+        else:
+            detail = msg
+    else:
+        detail = "Validation failed"
+    return _JSONResponse(status_code=422, content={"detail": detail})
+
+
+@app.exception_handler(Exception)
+async def _unhandled_exception_handler(request: _Request, exc: Exception):
+    """Catch-all: log full traceback, return clean message to client."""
+    log.error(f"Unhandled error on {request.method} {request.url.path}: {exc}")
+    log.error(_traceback.format_exc())
+
+    # psycopg2 unique violation
+    err_str = str(exc).lower()
+    if "duplicate key" in err_str:
+        if "email" in err_str:
+            return _JSONResponse(status_code=409, content={"detail": "A user with this email already exists."})
+        if "name_lower" in err_str:
+            return _JSONResponse(status_code=409, content={"detail": "A facility with this name already exists."})
+        return _JSONResponse(status_code=409, content={"detail": "This record already exists."})
+
+    if "violates foreign key" in err_str:
+        return _JSONResponse(status_code=400, content={"detail": "Referenced record does not exist."})
+
+    if "violates not-null" in err_str or "null value in column" in err_str:
+        return _JSONResponse(status_code=400, content={"detail": "Required field is missing."})
+
+    if "connection refused" in err_str or "could not connect" in err_str or "connection timed out" in err_str:
+        return _JSONResponse(status_code=503, content={"detail": "Database is temporarily unavailable. Please try again."})
+
+    # Generic fallback — don't leak internals to client
+    return _JSONResponse(
+        status_code=500,
+        content={"detail": "An unexpected error occurred. Please try again or contact support if the issue persists."},
+    )
 
 # CORS — locked to production domain + localhost for dev
 ALLOWED_ORIGINS_ENV = os.environ.get("ALLOWED_ORIGINS", "")
@@ -197,6 +282,9 @@ class CreateUserRequest(BaseModel):
 
 class ChangePasswordRequest(BaseModel):
     new_password: str
+
+class ResetPasswordRequest(BaseModel):
+    new_password: Optional[str] = None  # if omitted, server generates one
 
 
 def get_current_user(authorization: Optional[str] = Header(None)) -> dict:
@@ -355,6 +443,15 @@ def change_password(req: ChangePasswordRequest, user: dict = Depends(get_current
     if len(req.new_password) < 8:
         raise HTTPException(400, "Password must be at least 8 characters")
     update_user_password(user["id"], req.new_password)
+
+    try:
+        send_password_changed_email(
+            to_email=user["email"],
+            full_name=user.get("full_name") or user["email"],
+        )
+    except Exception as e:
+        log.error(f"Failed to send password change email: {e}")
+
     return {"success": True}
 
 
@@ -401,14 +498,31 @@ def onboard_facility(req: CreateFacilityRequest, user: dict = Depends(require_su
     )
 
     # Create the clinic admin user
-    admin_user = create_user(
-        email=req.admin_email,
-        password=req.admin_password,
-        full_name=req.admin_full_name,
-        role=ROLE_CLINIC_ADMIN,
-        facility_id=facility_id,
-        must_change_password=True,
-    )
+    try:
+        admin_user = create_user(
+            email=req.admin_email,
+            password=req.admin_password,
+            full_name=req.admin_full_name,
+            role=ROLE_CLINIC_ADMIN,
+            facility_id=facility_id,
+            must_change_password=True,
+        )
+    except EmailAlreadyExistsError as e:
+        raise HTTPException(409, str(e))
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+    # Send welcome email to the new clinic admin
+    try:
+        send_welcome_email(
+            to_email=req.admin_email,
+            full_name=req.admin_full_name,
+            temp_password=req.admin_password,
+            role=ROLE_CLINIC_ADMIN,
+            facility_name=req.name,
+        )
+    except Exception as e:
+        log.error(f"Failed to send welcome email: {e}")
 
     return {
         "facility_id": facility_id,
@@ -453,14 +567,39 @@ def create_team_user(req: CreateUserRequest, user: dict = Depends(get_current_us
     else:
         facility_id = req.facility_id
 
-    new_user = create_user(
-        email=req.email,
-        password=req.password,
-        full_name=req.full_name,
-        role=req.role,
-        facility_id=facility_id,
-        must_change_password=True,
-    )
+    try:
+        new_user = create_user(
+            email=req.email,
+            password=req.password,
+            full_name=req.full_name,
+            role=req.role,
+            facility_id=facility_id,
+            must_change_password=True,
+        )
+    except EmailAlreadyExistsError as e:
+        raise HTTPException(409, str(e))
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+
+    # Send welcome email with credentials
+    facility_name_for_email = user.get("facility_name") if facility_id == user.get("facility_id") else None
+    if not facility_name_for_email and facility_id:
+        try:
+            target_user = get_user_by_id(new_user["id"])
+            facility_name_for_email = target_user.get("facility_name")
+        except:
+            pass
+    try:
+        send_welcome_email(
+            to_email=req.email,
+            full_name=req.full_name,
+            temp_password=req.password,
+            role=req.role,
+            facility_name=facility_name_for_email,
+        )
+    except Exception as e:
+        log.error(f"Failed to send welcome email: {e}")
+
     return new_user
 
 
@@ -483,6 +622,78 @@ def remove_user(user_id: int, user: dict = Depends(get_current_user)):
 
     delete_user(user_id)
     return {"success": True}
+
+
+def _generate_temp_password(length: int = 12) -> str:
+    """Generate a readable temporary password (no ambiguous characters)."""
+    alphabet = string.ascii_letters.replace("l", "").replace("I", "").replace("O", "") \
+        + string.digits.replace("0", "").replace("1", "") + "!@#$%"
+    return "".join(secrets.choice(alphabet) for _ in range(length))
+
+
+@app.post("/api/users/{user_id}/reset-password")
+def reset_user_password(user_id: int, req: ResetPasswordRequest, request: Request,
+                        user: dict = Depends(get_current_user)):
+    """Admin-initiated password reset.
+    - Super admin can reset anyone except themselves (use change-password for self).
+    - Clinic admin can reset users in their own facility only (not super admins).
+    - Generates a temp password if none provided, forces must_change_password=TRUE,
+      sends email, and returns the new password so the admin can share it manually
+      if email delivery fails."""
+    if user["role"] not in [ROLE_SUPER_ADMIN, ROLE_CLINIC_ADMIN]:
+        raise HTTPException(403, "Only admins can reset passwords")
+    if user["id"] == user_id:
+        raise HTTPException(400, "Use Change Password to update your own password")
+
+    target = get_user_by_id(user_id)
+    if not target:
+        raise HTTPException(404, "User not found")
+
+    # Clinic admins: scope check
+    if user["role"] == ROLE_CLINIC_ADMIN:
+        if target.get("facility_id") != user.get("facility_id"):
+            raise HTTPException(403, "Cannot reset users from other facilities")
+        if target.get("role") == ROLE_SUPER_ADMIN:
+            raise HTTPException(403, "Cannot reset super admin passwords")
+
+    new_password = (req.new_password or "").strip() or _generate_temp_password()
+    if len(new_password) < 8:
+        raise HTTPException(400, "Password must be at least 8 characters")
+
+    update_user_password(user_id, new_password, must_change=True)
+
+    email_sent = False
+    try:
+        email_sent = send_password_reset_email(
+            to_email=target["email"],
+            full_name=target.get("full_name") or target["email"],
+            temp_password=new_password,
+            reset_by=user.get("full_name") or user["email"],
+        )
+    except Exception as e:
+        log.error(f"Failed to send password reset email: {e}")
+
+    try:
+        log_audit(
+            facility_id=target.get("facility_id"),
+            action="password_reset",
+            details={
+                "target_user_id": user_id,
+                "target_email": target["email"],
+                "email_sent": email_sent,
+            },
+            user_email=user.get("email"),
+            ip_address=_get_client_ip(request),
+        )
+    except Exception as e:
+        log.error(f"Audit log failed for password reset: {e}")
+
+    return {
+        "success": True,
+        "temp_password": new_password,
+        "email_sent": email_sent,
+        "must_change_password": True,
+    }
 
 
 @app.post("/api/validate")
@@ -944,6 +1155,19 @@ async def calculate_multi(
 
         # Save current quarter to history
         _save_to_history(facility_name, results.get("quarter", "Unknown"), results)
+
+        # Send email notification to the user who triggered the calculation
+        try:
+            if user.get("email") and user["email"] != "anonymous":
+                send_kpi_calculation_email(
+                    to_email=user["email"],
+                    full_name=user.get("full_name") or user["email"],
+                    facility_name=facility_name,
+                    quarter=results.get("quarter", "Unknown"),
+                    summary=results.get("jawda_summary", {}),
+                )
+        except Exception as e:
+            log.error(f"Failed to send KPI calculation email: {e}")
 
         # Audit log
         if USE_DB:

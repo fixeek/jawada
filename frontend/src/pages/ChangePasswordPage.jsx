@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Lock, AlertCircle, CheckCircle, ChevronRight, Shield } from 'lucide-react'
 import { useAuth } from '../utils/auth'
+import { getErrorMessage } from '../utils/errors'
 
 export default function ChangePasswordPage() {
   const { user, changePassword } = useAuth()
@@ -24,7 +25,7 @@ export default function ChangePasswordPage() {
     try {
       await changePassword(password)
     } catch (err) {
-      setError(err.response?.data?.detail || 'Failed to change password')
+      setError(getErrorMessage(err, 'Failed to change password'))
     } finally {
       setLoading(false)
     }

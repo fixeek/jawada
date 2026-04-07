@@ -3,6 +3,7 @@ import { Upload, FileText, ChevronRight, AlertCircle, Shield, Activity, BarChart
          Sparkles, ChevronDown, Target, FileWarning, ClipboardList, CheckCircle,
          AlertTriangle, ArrowLeft, Columns, CalendarDays, X, Clock, FileSpreadsheet, Receipt } from 'lucide-react'
 import { api } from '../utils/api'
+import { getErrorMessage } from '../utils/errors'
 
 /* ── File Slot Component ─────────────────────────────────────────────── */
 
@@ -117,7 +118,7 @@ export default function UploadPage({ onResults, facility: facilityProp }) {
         setQuarter(result.quarters_detected[0].quarter)
       }
     } catch (err) {
-      setError(err.response?.data?.detail || 'Validation failed. Check your files and try again.')
+      setError(getErrorMessage(err, 'Validation failed. Check your files and try again.'))
     } finally {
       setLoading(false)
     }
@@ -131,7 +132,7 @@ export default function UploadPage({ onResults, facility: facilityProp }) {
       const result = await api.calculateMulti(preview.session_id, quarter, facility)
       onResults(result.results)
     } catch (err) {
-      setError(err.response?.data?.detail || 'Calculation failed. Please try again.')
+      setError(getErrorMessage(err, 'Calculation failed. Please try again.'))
     } finally {
       setCalculating(false)
     }

@@ -338,88 +338,138 @@ def save_results(facility_name: str, results: dict) -> int:
 
 
 def get_platform_stats() -> dict:
-    """Super admin: get platform-wide statistics."""
+    """Super admin: platform-level statistics (NOT clinical KPI metrics).
+
+    Focused on running the SaaS — clinic count, users, usage, engagement, risk.
+    Does NOT show clinical compliance (that's the clinic admin's concern, not platform's).
+    """
     conn = get_conn()
     cur = conn.cursor(cursor_factory=RealDictCursor)
 
+    # ── Platform size ────────────────────────────────────────────────────
     cur.execute("SELECT COUNT(*) as total FROM facilities WHERE is_active = TRUE")
     active_facilities = cur.fetchone()["total"]
 
     cur.execute("SELECT COUNT(*) as total FROM facilities")
     total_facilities = cur.fetchone()["total"]
 
-    cur.execute("SELECT COUNT(*) as total FROM users WHERE is_active = TRUE")
-    active_users = cur.fetchone()["total"]
+    cur.execute("""
+        SELECT COUNT(*) as total FROM users
+        WHERE is_active = TRUE AND facility_id IS NOT NULL
+    """)
+    active_clinic_users = cur.fetchone()["total"]
+
+    cur.execute("""
+        SELECT COUNT(*) as total FROM users
+        WHERE is_active = TRUE AND role = 'super_admin'
+    """)
+    active_platform_admins = cur.fetchone()["total"]
 
     cur.execute("SELECT COUNT(*) as total FROM uploads")
     total_uploads = cur.fetchone()["total"]
 
-    cur.execute("SELECT COUNT(DISTINCT facility_id) as total FROM uploads")
-    facilities_with_data = cur.fetchone()["total"]
-
+    # ── Engagement & activity ────────────────────────────────────────────
     cur.execute("""
-        SELECT COUNT(*) as total
-        FROM jawda_summaries
-        WHERE verdict = 'ready'
-    """)
-    ready_count = cur.fetchone()["total"]
-
-    cur.execute("""
-        SELECT COUNT(*) as total
-        FROM jawda_summaries
-    """)
-    total_summaries = cur.fetchone()["total"]
-
-    # Recent activity
-    cur.execute("""
-        SELECT COUNT(*) as total
-        FROM uploads
-        WHERE uploaded_at >= NOW() - INTERVAL '7 days'
-    """)
-    uploads_last_7d = cur.fetchone()["total"]
-
-    cur.execute("""
-        SELECT COUNT(*) as total
-        FROM uploads
+        SELECT COUNT(DISTINCT facility_id) as total FROM uploads
         WHERE uploaded_at >= NOW() - INTERVAL '30 days'
     """)
-    uploads_last_30d = cur.fetchone()["total"]
+    active_clinics_30d = cur.fetchone()["total"]
 
-    # Facilities by quarter (latest)
     cur.execute("""
-        SELECT verdict, COUNT(*) as count
-        FROM jawda_summaries js
-        WHERE NOT EXISTS (
-            SELECT 1 FROM jawda_summaries js2
-            WHERE js2.facility_id = js.facility_id
-            AND js2.created_at > js.created_at
-        )
-        GROUP BY verdict
+        SELECT COUNT(*) as total FROM uploads
+        WHERE uploaded_at >= NOW() - INTERVAL '7 days'
     """)
-    verdict_breakdown = {r["verdict"]: r["count"] for r in cur.fetchall()}
+    uploads_7d = cur.fetchone()["total"]
+
+    cur.execute("""
+        SELECT COUNT(*) as total FROM facilities
+        WHERE created_at >= NOW() - INTERVAL '7 days'
+    """)
+    new_clinics_7d = cur.fetchone()["total"]
+
+    cur.execute("""
+        SELECT COUNT(*) as total FROM users
+        WHERE created_at >= NOW() - INTERVAL '7 days' AND facility_id IS NOT NULL
+    """)
+    new_users_7d = cur.fetchone()["total"]
+
+    # ── Risks ────────────────────────────────────────────────────────────
+    # Clinics that have NEVER uploaded (failed onboarding)
+    cur.execute("""
+        SELECT COUNT(*) as total FROM facilities f
+        WHERE f.is_active = TRUE
+        AND NOT EXISTS (SELECT 1 FROM uploads WHERE facility_id = f.id)
+    """)
+    clinics_never_uploaded = cur.fetchone()["total"]
+
+    # Active clinics that haven't uploaded in 30+ days (churn risk)
+    cur.execute("""
+        SELECT COUNT(*) as total FROM facilities f
+        WHERE f.is_active = TRUE
+        AND EXISTS (SELECT 1 FROM uploads WHERE facility_id = f.id)
+        AND NOT EXISTS (
+            SELECT 1 FROM uploads
+            WHERE facility_id = f.id AND uploaded_at >= NOW() - INTERVAL '30 days'
+        )
+    """)
+    clinics_inactive_30d = cur.fetchone()["total"]
+
+    # Failed login attempts in last 24 hours (security signal)
+    cur.execute("""
+        SELECT COUNT(*) as total FROM audit_log
+        WHERE action = 'login_failed' AND created_at >= NOW() - INTERVAL '24 hours'
+    """)
+    failed_logins_24h = cur.fetchone()["total"]
+
+    # ── Recent activity feed (8 most recent events) ──────────────────────
+    cur.execute("""
+        SELECT a.action, a.created_at, a.user_email, a.quarter, f.name as facility_name
+        FROM audit_log a
+        LEFT JOIN facilities f ON a.facility_id = f.id
+        ORDER BY a.created_at DESC
+        LIMIT 8
+    """)
+    recent_activity = []
+    for row in cur.fetchall():
+        recent_activity.append({
+            "action": row["action"],
+            "created_at": row["created_at"].isoformat() if row["created_at"] else None,
+            "user_email": row["user_email"],
+            "quarter": row["quarter"],
+            "facility_name": row["facility_name"],
+        })
 
     cur.close()
     conn.close()
+
+    engagement_pct = round((active_clinics_30d / active_facilities) * 100) if active_facilities > 0 else 0
 
     return {
         "facilities": {
             "total": total_facilities,
             "active": active_facilities,
-            "with_data": facilities_with_data,
+            "active_30d": active_clinics_30d,
+            "engagement_pct": engagement_pct,
         },
         "users": {
-            "active": active_users,
+            "active": active_clinic_users,
+            "platform_admins": active_platform_admins,
+            "total": active_clinic_users + active_platform_admins,
         },
         "uploads": {
             "total": total_uploads,
-            "last_7_days": uploads_last_7d,
-            "last_30_days": uploads_last_30d,
+            "last_7_days": uploads_7d,
         },
-        "compliance": {
-            "ready": ready_count,
-            "total_summaries": total_summaries,
-            "verdict_breakdown": verdict_breakdown,
+        "growth": {
+            "new_clinics_7d": new_clinics_7d,
+            "new_users_7d": new_users_7d,
         },
+        "risks": {
+            "clinics_never_uploaded": clinics_never_uploaded,
+            "clinics_inactive_30d": clinics_inactive_30d,
+            "failed_logins_24h": failed_logins_24h,
+        },
+        "recent_activity": recent_activity,
     }
 
 

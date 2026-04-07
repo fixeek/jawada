@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import axios from 'axios'
 import { Building, Plus, Users, FileText, X, AlertCircle, CheckCircle,
          ChevronRight, Sparkles } from 'lucide-react'
+import { getErrorMessage } from '../utils/errors'
 
 const BASE = import.meta.env.VITE_API_URL || ''
 
@@ -25,7 +26,7 @@ function OnboardModal({ onClose, onSuccess }) {
       const { data } = await axios.post(`${BASE}/api/admin/facilities`, form)
       onSuccess(data)
     } catch (err) {
-      setError(err.response?.data?.detail || 'Failed to onboard clinic')
+      setError(getErrorMessage(err, 'Failed to onboard clinic'))
     } finally {
       setLoading(false)
     }

@@ -1,8 +1,10 @@
 import { useState, useEffect } from 'react'
 import axios from 'axios'
 import { ArrowLeft, Building, Users, Plus, Trash2, X, AlertCircle, CheckCircle,
-         FileText, Calendar, Mail, Phone, MapPin } from 'lucide-react'
+         FileText, Calendar, Mail, Phone, MapPin, KeyRound } from 'lucide-react'
 import { ROLE_LABELS } from '../utils/auth'
+import { getErrorMessage } from '../utils/errors'
+import ResetPasswordModal from '../components/ResetPasswordModal'
 
 const BASE = import.meta.env.VITE_API_URL || ''
 
@@ -28,7 +30,7 @@ function CreateUserModal({ facilityId, onClose, onSuccess }) {
       const { data } = await axios.post(`${BASE}/api/users`, { ...form, facility_id: facilityId })
       onSuccess(data)
     } catch (err) {
-      setError(err.response?.data?.detail || 'Failed to create user')
+      setError(getErrorMessage(err, 'Failed to create user'))
     } finally {
       setLoading(false)
     }
@@ -109,6 +111,7 @@ function CreateUserModal({ facilityId, onClose, onSuccess }) {
 export default function AdminClinicDetailPage({ facility, onBack }) {
   const [users, setUsers] = useState(null)
   const [showCreate, setShowCreate] = useState(false)
+  const [resetTarget, setResetTarget] = useState(null)
 
   function loadUsers() {
     axios.get(`${BASE}/api/users?facility_id=${facility.id}`)
@@ -124,7 +127,7 @@ export default function AdminClinicDetailPage({ facility, onBack }) {
       await axios.delete(`${BASE}/api/users/${userId}`)
       loadUsers()
     } catch (err) {
-      alert(err.response?.data?.detail || 'Failed to delete user')
+      alert(getErrorMessage(err, 'Failed to delete user'))
     }
   }
 
@@ -245,10 +248,18 @@ export default function AdminClinicDetailPage({ facility, onBack }) {
                       {u.last_login ? new Date(u.last_login).toLocaleDateString('en-GB') : 'Never'}
                     </td>
                     <td className="px-5 py-3">
-                      <button onClick={() => handleDelete(u.id, u.email)}
-                        className="text-gray-400 hover:text-red-500 transition-colors">
-                        <Trash2 size={14} />
-                      </button>
+                      <div className="flex items-center gap-3">
+                        <button onClick={() => setResetTarget(u)}
+                          title="Reset password"
+                          className="text-gray-400 hover:text-teal-500 transition-colors">
+                          <KeyRound size={14} />
+                        </button>
+                        <button onClick={() => handleDelete(u.id, u.email)}
+                          title="Delete user"
+                          className="text-gray-400 hover:text-red-500 transition-colors">
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -263,6 +274,13 @@ export default function AdminClinicDetailPage({ facility, onBack }) {
           facilityId={facility.id}
           onClose={() => setShowCreate(false)}
           onSuccess={() => { setShowCreate(false); loadUsers() }}
+        />
+      )}
+
+      {resetTarget && (
+        <ResetPasswordModal
+          targetUser={resetTarget}
+          onClose={() => setResetTarget(null)}
         />
       )}
     </div>

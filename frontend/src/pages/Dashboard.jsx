@@ -8,6 +8,7 @@ import KPICard from '../components/KPICard'
 import KPIModal from '../components/KPIModal'
 import DataQuality from '../components/DataQuality'
 import PrintReport from '../components/PrintReport'
+import TrendChart from '../components/TrendChart'
 
 /* ── Readiness Verdict ─────────────────────────────────────────────────────── */
 
@@ -742,6 +743,14 @@ export default function Dashboard({ results, onBack, onAudit }) {
             })}
           </div>
         </div>
+
+        {/* Multi-quarter trend charts */}
+        {quarterList.length > 1 && (
+          <div className="mt-8">
+            <SectionHeader icon={TrendingUp} title={`KPI Trends — ${quarterList.length} Quarters`} />
+            <TrendChart history={history} currentQuarter={currentQ} />
+          </div>
+        )}
 
         {/* Quarter Comparison */}
         <QuarterComparison

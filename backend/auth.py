@@ -76,16 +76,38 @@ def decode_token(token: str) -> Optional[dict]:
 
 # ── User CRUD ──────────────────────────────────────────────────────────────
 
+class EmailAlreadyExistsError(Exception):
+    """Raised when trying to create a user with an email that already exists."""
+    pass
+
+
 def create_user(email: str, password: str, full_name: str, role: str,
                 facility_id: Optional[int] = None,
                 must_change_password: bool = False) -> dict:
-    """Create a new user. Returns user dict (without password hash)."""
+    """Create a new user. Returns user dict (without password hash).
+    Raises EmailAlreadyExistsError if a user (active or inactive) already exists with this email.
+    To re-add a soft-deleted user, the admin must reactivate them via reactivate_user()."""
     if role not in ALL_ROLES:
         raise ValueError(f"Invalid role: {role}")
 
     conn = get_conn()
     cur = conn.cursor(cursor_factory=RealDictCursor)
     email_lower = email.strip().lower()
+
+    # Check for existing user (active or inactive)
+    cur.execute(
+        "SELECT id, email, is_active, facility_id FROM users WHERE email_lower = %s",
+        (email_lower,),
+    )
+    existing = cur.fetchone()
+    if existing:
+        cur.close()
+        conn.close()
+        raise EmailAlreadyExistsError(
+            f"A user with email '{email}' already exists "
+            f"({'active' if existing['is_active'] else 'deactivated'})."
+        )
+
     password_hash = hash_password(password)
 
     cur.execute("""
@@ -206,16 +228,18 @@ def create_facility(name: str, license_no: str = None, doh_facility_id: str = No
     return facility_id
 
 
-def update_user_password(user_id: int, new_password: str):
-    """Update a user's password."""
+def update_user_password(user_id: int, new_password: str, must_change: bool = False):
+    """Update a user's password.
+    must_change=True is used for admin-initiated resets — forces user to set their own
+    password on next login. Defaults to False (self-service change)."""
     conn = get_conn()
     cur = conn.cursor()
     password_hash = hash_password(new_password)
     cur.execute("""
         UPDATE users
-        SET password_hash = %s, must_change_password = FALSE, updated_at = NOW()
+        SET password_hash = %s, must_change_password = %s, updated_at = NOW()
         WHERE id = %s
-    """, (password_hash, user_id))
+    """, (password_hash, must_change, user_id))
     conn.commit()
     cur.close()
     conn.close()

@@ -1,7 +1,9 @@
 import { useState, useEffect } from 'react'
 import axios from 'axios'
-import { Users, Plus, X, AlertCircle, CheckCircle, Trash2, Mail, Shield } from 'lucide-react'
+import { Users, Plus, X, AlertCircle, CheckCircle, Trash2, Mail, Shield, KeyRound } from 'lucide-react'
 import { ROLE_LABELS, useAuth } from '../utils/auth'
+import { getErrorMessage } from '../utils/errors'
+import ResetPasswordModal from '../components/ResetPasswordModal'
 
 const BASE = import.meta.env.VITE_API_URL || ''
 
@@ -27,7 +29,7 @@ function CreateUserModal({ onClose, onSuccess }) {
       const { data } = await axios.post(`${BASE}/api/users`, form)
       onSuccess(data)
     } catch (err) {
-      setError(err.response?.data?.detail || 'Failed to create user')
+      setError(getErrorMessage(err, 'Failed to create user'))
     } finally {
       setLoading(false)
     }
@@ -109,6 +111,7 @@ export default function UsersPage() {
   const { user: currentUser } = useAuth()
   const [users, setUsers] = useState(null)
   const [showCreate, setShowCreate] = useState(false)
+  const [resetTarget, setResetTarget] = useState(null)
 
   function loadUsers() {
     axios.get(`${BASE}/api/users`)
@@ -124,7 +127,7 @@ export default function UsersPage() {
       await axios.delete(`${BASE}/api/users/${userId}`)
       loadUsers()
     } catch (err) {
-      alert(err.response?.data?.detail || 'Failed to delete user')
+      alert(getErrorMessage(err, 'Failed to delete user'))
     }
   }
 
@@ -182,10 +185,18 @@ export default function UsersPage() {
                     </td>
                     <td className="px-5 py-3">
                       {u.id !== currentUser?.id && (
-                        <button onClick={() => handleDelete(u.id, u.email)}
-                          className="text-gray-400 hover:text-red-500 transition-colors">
-                          <Trash2 size={14} />
-                        </button>
+                        <div className="flex items-center gap-3">
+                          <button onClick={() => setResetTarget(u)}
+                            title="Reset password"
+                            className="text-gray-400 hover:text-teal-500 transition-colors">
+                            <KeyRound size={14} />
+                          </button>
+                          <button onClick={() => handleDelete(u.id, u.email)}
+                            title="Delete user"
+                            className="text-gray-400 hover:text-red-500 transition-colors">
+                            <Trash2 size={14} />
+                          </button>
+                        </div>
                       )}
                     </td>
                   </tr>
@@ -200,6 +211,13 @@ export default function UsersPage() {
         <CreateUserModal
           onClose={() => setShowCreate(false)}
           onSuccess={() => { setShowCreate(false); loadUsers() }}
+        />
+      )}
+
+      {resetTarget && (
+        <ResetPasswordModal
+          targetUser={resetTarget}
+          onClose={() => setResetTarget(null)}
         />
       )}
     </div>
