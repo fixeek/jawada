@@ -7,6 +7,7 @@ import json
 import psycopg2
 from psycopg2.extras import RealDictCursor
 from datetime import datetime
+from typing import Optional
 
 # Connection string — from environment variable or default
 DB_HOST = os.environ.get("DB_HOST", "localhost")
@@ -22,6 +23,12 @@ def get_conn():
         host=DB_HOST, port=DB_PORT, dbname=DB_NAME,
         user=DB_USER, password=DB_PASS, sslmode=DB_SSL
     )
+
+
+# NOTE: PostgreSQL Row-Level Security (RLS) is planned for a follow-up.
+# For now, multi-tenancy is enforced at the application layer via facility_id checks
+# in every query that filters by user.facility_id. RLS would require migrating every
+# query to use a session-context connection — done in a dedicated sprint.
 
 
 def init_db():
@@ -156,25 +163,32 @@ def init_db():
 
 
 def log_audit(facility_name: str, action: str, quarter: str = None,
-              details: dict = None, upload_id: int = None, user_email: str = None):
+              details: dict = None, upload_id: int = None, user_email: str = None,
+              ip_address: str = None, user_agent: str = None):
     """Log an audit trail entry."""
     conn = get_conn()
     cur = conn.cursor()
     facility_id = None
     try:
-        name_lower = facility_name.strip().lower()
-        cur.execute("SELECT id FROM facilities WHERE name_lower = %s", (name_lower,))
-        row = cur.fetchone()
-        if row:
-            facility_id = row[0]
+        name_lower = (facility_name or "").strip().lower()
+        if name_lower:
+            cur.execute("SELECT id FROM facilities WHERE name_lower = %s", (name_lower,))
+            row = cur.fetchone()
+            if row:
+                facility_id = row[0]
     except:
         pass
 
+    # Store user_agent in details JSON since we don't have a column for it
+    full_details = details or {}
+    if user_agent:
+        full_details["_user_agent"] = user_agent[:500]
+
     cur.execute("""
-        INSERT INTO audit_log (facility_id, upload_id, action, quarter, details, user_email)
-        VALUES (%s, %s, %s, %s, %s, %s)
+        INSERT INTO audit_log (facility_id, upload_id, action, quarter, details, user_email, ip_address)
+        VALUES (%s, %s, %s, %s, %s, %s, %s)
     """, (facility_id, upload_id, action, quarter,
-          json.dumps(details or {}), user_email))
+          json.dumps(full_details), user_email, ip_address))
     conn.commit()
     cur.close()
     conn.close()

@@ -1,7 +1,19 @@
 """
 Jawda KPI Platform — FastAPI Backend
 """
-from fastapi import FastAPI, UploadFile, File, HTTPException, Form, Depends, Header
+import logging
+import sys
+
+# Configure structured logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s [%(levelname)s] %(name)s: %(message)s',
+    datefmt='%Y-%m-%dT%H:%M:%S',
+    handlers=[logging.StreamHandler(sys.stdout)],
+)
+log = logging.getLogger("jawda")
+
+from fastapi import FastAPI, UploadFile, File, HTTPException, Form, Depends, Header, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
@@ -9,7 +21,6 @@ from pydantic import BaseModel
 import pandas as pd
 import tempfile, os, json, uuid
 from datetime import datetime
-import sys
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from engine.kpi_engine import run_all_kpis, load_file, normalise_df, map_columns
 from typing import Optional
@@ -21,9 +32,9 @@ try:
                           get_platform_stats, get_platform_audit_log, get_system_health)
     init_db()
     USE_DB = True
-    print("✓ Connected to PostgreSQL")
+    log.info("✓ Connected to PostgreSQL")
 except Exception as e:
-    print(f"⚠ Database unavailable, using in-memory: {e}")
+    log.warning(f"⚠ Database unavailable, using in-memory: {e}")
     def log_audit(*args, **kwargs): pass
     def get_audit_log(*args, **kwargs): return []
     def get_platform_stats(*args, **kwargs): return {}
@@ -35,15 +46,16 @@ try:
     from auth import (
         verify_password, create_token, decode_token, get_user_by_email, get_user_by_id,
         create_user, list_users_for_facility, list_all_facilities, create_facility,
-        update_user_password, update_last_login, delete_user, seed_super_admin,
+        update_user_password, update_last_login, delete_user, deactivate_user,
+        reactivate_user, deactivate_facility, reactivate_facility, seed_super_admin,
         ROLE_SUPER_ADMIN, ROLE_CLINIC_ADMIN, ROLE_QUALITY_OFFICER, ROLE_VIEWER, ALL_ROLES
     )
     USE_AUTH = USE_DB
     if USE_AUTH:
         seed_super_admin()
-        print("✓ Auth module ready")
+        log.info("✓ Auth module ready")
 except Exception as e:
-    print(f"⚠ Auth unavailable: {e}")
+    log.warning(f"⚠ Auth unavailable: {e}")
     USE_AUTH = False
 
 app = FastAPI(
@@ -52,12 +64,23 @@ app = FastAPI(
     version="1.0.0"
 )
 
+# CORS — locked to production domain + localhost for dev
+ALLOWED_ORIGINS_ENV = os.environ.get("ALLOWED_ORIGINS", "")
+if ALLOWED_ORIGINS_ENV:
+    allowed_origins = [o.strip() for o in ALLOWED_ORIGINS_ENV.split(",") if o.strip()]
+else:
+    allowed_origins = [
+        "https://jawda.trizodiac.com",
+        "http://localhost:5173",
+        "http://localhost:3000",
+    ]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=allowed_origins,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type", "Accept"],
 )
 
 # In-memory store for demo (replace with PostgreSQL in production)
@@ -73,7 +96,7 @@ def _save_to_history(facility: str, quarter: str, results: dict):
         try:
             save_results(facility, results)
         except Exception as e:
-            print(f"DB save error: {e}")
+            log.error(f"DB save error: {e}")
 
     # Also keep in-memory for current session
     key = facility.strip().lower()
@@ -213,19 +236,90 @@ def require_super_admin(user: dict = Depends(get_current_user)) -> dict:
     return user
 
 
+# In-memory rate limiter for login (per IP)
+from collections import defaultdict
+_login_attempts = defaultdict(list)  # ip -> [timestamps]
+LOGIN_MAX_ATTEMPTS = 5
+LOGIN_WINDOW_SECONDS = 300  # 5 minutes
+
+
+def _check_login_rate_limit(ip: str):
+    """Raise 429 if too many login attempts from this IP."""
+    now = datetime.utcnow().timestamp()
+    cutoff = now - LOGIN_WINDOW_SECONDS
+    attempts = [t for t in _login_attempts[ip] if t > cutoff]
+    _login_attempts[ip] = attempts
+    if len(attempts) >= LOGIN_MAX_ATTEMPTS:
+        raise HTTPException(429, "Too many login attempts. Please try again in a few minutes.")
+
+
+def _record_login_attempt(ip: str):
+    _login_attempts[ip].append(datetime.utcnow().timestamp())
+
+
+def _get_client_ip(request: Request) -> str:
+    """Extract client IP, respecting X-Forwarded-For from Container Apps."""
+    fwd = request.headers.get("x-forwarded-for")
+    if fwd:
+        return fwd.split(",")[0].strip()
+    return request.client.host if request.client else "unknown"
+
+
 @app.post("/api/auth/login")
-def login(req: LoginRequest):
+def login(req: LoginRequest, request: Request):
     """Login with email + password. Returns JWT token."""
     if not USE_AUTH:
         raise HTTPException(503, "Authentication system unavailable")
 
+    client_ip = _get_client_ip(request)
+    user_agent = request.headers.get("user-agent", "")
+    _check_login_rate_limit(client_ip)
+    _record_login_attempt(client_ip)
+
     user = get_user_by_email(req.email)
     if not user or not verify_password(req.password, user["password_hash"]):
+        # Audit failed login attempts
+        try:
+            log_audit(
+                facility_name="",
+                action="login_failed",
+                details={"email": req.email[:120]},
+                user_email=req.email,
+                ip_address=client_ip,
+                user_agent=user_agent,
+            )
+        except:
+            pass
         raise HTTPException(401, "Invalid email or password")
     if not user.get("is_active", True):
+        try:
+            log_audit(
+                facility_name=user.get("facility_name") or "",
+                action="login_blocked",
+                details={"reason": "account_disabled"},
+                user_email=user["email"],
+                ip_address=client_ip,
+                user_agent=user_agent,
+            )
+        except:
+            pass
         raise HTTPException(403, "Account disabled")
 
     update_last_login(user["id"])
+
+    # Audit successful login
+    try:
+        log_audit(
+            facility_name=user.get("facility_name") or "",
+            action="login_success",
+            details={"role": user["role"]},
+            user_email=user["email"],
+            ip_address=client_ip,
+            user_agent=user_agent,
+        )
+    except:
+        pass
+
     token = create_token(
         user_id=user["id"],
         email=user["email"],
@@ -746,12 +840,21 @@ async def validate_multi(
 
 @app.post("/api/calculate-multi")
 async def calculate_multi(
+    request: Request,
     session_id: str = Form(...),
     quarter: str = Form(default=""),
     facility_name: str = Form(default="Clinic"),
+    user: dict = Depends(get_current_user),
 ):
     """Run KPI calculations on previously validated multi-file session.
     Merges files by patient ID where possible."""
+
+    # Use facility from logged-in user when available (multi-tenancy)
+    if user.get("facility_name"):
+        facility_name = user["facility_name"]
+
+    client_ip = _get_client_ip(request)
+    user_agent = request.headers.get("user-agent", "")
 
     if session_id not in validated_files:
         raise HTTPException(400, "Session not found or expired. Please upload again.")
@@ -850,6 +953,9 @@ async def calculate_multi(
                     facility_name=facility_name,
                     action="kpi_calculation",
                     quarter=results.get("quarter", "Unknown"),
+                    user_email=user.get("email"),
+                    ip_address=client_ip,
+                    user_agent=user_agent,
                     details={
                         "total_records": results.get("total_records", 0),
                         "files_used": list(paths.keys()),
@@ -870,7 +976,7 @@ async def calculate_multi(
                     }
                 )
             except Exception as e:
-                print(f"Audit log error: {e}")
+                log.error(f"Audit log error: {e}")
 
         # Process previous quarter files if provided
         prev_paths = session.get("prev_paths", {})
@@ -1046,7 +1152,7 @@ def get_history(facility_name: str):
         try:
             history = get_facility_history(facility_name)
         except Exception as e:
-            print(f"DB history error: {e}")
+            log.error(f"DB history error: {e}")
     if not history:
         key = facility_name.strip().lower()
         history = facility_history.get(key, {})

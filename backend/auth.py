@@ -10,7 +10,18 @@ from psycopg2.extras import RealDictCursor
 
 from database import get_conn
 
-JWT_SECRET = os.environ.get("JWT_SECRET", "dev-secret-change-in-production-7f3c4b9e2a1d")
+JWT_SECRET = os.environ.get("JWT_SECRET")
+if not JWT_SECRET:
+    # Allow fallback only in local dev (when DB_HOST is localhost)
+    if os.environ.get("DB_HOST", "localhost") == "localhost":
+        JWT_SECRET = "dev-secret-local-only-do-not-use-in-production"
+        print("⚠ WARNING: Using local dev JWT secret. Set JWT_SECRET env var for production.")
+    else:
+        raise RuntimeError(
+            "JWT_SECRET environment variable is required. "
+            "Generate one with: python -c \"import secrets; print(secrets.token_urlsafe(48))\""
+        )
+
 JWT_ALGORITHM = "HS256"
 JWT_EXPIRY_HOURS = 12
 
@@ -220,11 +231,54 @@ def update_last_login(user_id: int):
     conn.close()
 
 
-def delete_user(user_id: int):
-    """Delete a user."""
+def deactivate_user(user_id: int):
+    """Soft-delete: mark user as inactive."""
     conn = get_conn()
     cur = conn.cursor()
-    cur.execute("DELETE FROM users WHERE id = %s", (user_id,))
+    cur.execute(
+        "UPDATE users SET is_active = FALSE, updated_at = NOW() WHERE id = %s",
+        (user_id,),
+    )
+    conn.commit()
+    cur.close()
+    conn.close()
+
+
+def reactivate_user(user_id: int):
+    """Reactivate a soft-deleted user."""
+    conn = get_conn()
+    cur = conn.cursor()
+    cur.execute(
+        "UPDATE users SET is_active = TRUE, updated_at = NOW() WHERE id = %s",
+        (user_id,),
+    )
+    conn.commit()
+    cur.close()
+    conn.close()
+
+
+# Backwards compat alias — old code paths call delete_user
+def delete_user(user_id: int):
+    """Soft-delete a user (kept for compatibility — calls deactivate_user)."""
+    deactivate_user(user_id)
+
+
+def deactivate_facility(facility_id: int):
+    """Soft-delete: mark facility as inactive (and all its users)."""
+    conn = get_conn()
+    cur = conn.cursor()
+    cur.execute("UPDATE facilities SET is_active = FALSE WHERE id = %s", (facility_id,))
+    cur.execute("UPDATE users SET is_active = FALSE WHERE facility_id = %s", (facility_id,))
+    conn.commit()
+    cur.close()
+    conn.close()
+
+
+def reactivate_facility(facility_id: int):
+    """Reactivate a facility (does NOT auto-reactivate users — admin must do that)."""
+    conn = get_conn()
+    cur = conn.cursor()
+    cur.execute("UPDATE facilities SET is_active = TRUE WHERE id = %s", (facility_id,))
     conn.commit()
     cur.close()
     conn.close()
