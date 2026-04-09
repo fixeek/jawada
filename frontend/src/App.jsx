@@ -404,8 +404,8 @@ function AppShell() {
     // Clinic user pages
     switch (page) {
       case 'dashboard':
-        // Loading state while fetching clinic history
-        if (clinicLoading) {
+        // Loading state while fetching clinic history (or before API call starts)
+        if (clinicLoading || (!results && clinicHistory === null)) {
           return (
             <div className="min-h-screen flex items-center justify-center">
               <div className="text-center">
