@@ -29,7 +29,7 @@ from typing import Optional
 USE_DB = False
 try:
     from database import (init_db, save_results, get_facility_history, get_facility_history_by_id,
-                          save_facility_col_mapping,
+                          save_facility_col_mapping, update_submission_status,
                           log_audit, get_audit_log,
                           get_platform_stats, get_platform_audit_log, get_system_health)
     init_db()
@@ -293,6 +293,11 @@ class ChangePasswordRequest(BaseModel):
 
 class ResetPasswordRequest(BaseModel):
     new_password: Optional[str] = None  # if omitted, server generates one
+
+class UpdateSubmissionRequest(BaseModel):
+    quarter: str
+    status: str  # calculated, under_review, approved, submitted, accepted
+    notes: Optional[str] = ""
 
 
 def get_current_user(authorization: Optional[str] = Header(None)) -> dict:
@@ -755,6 +760,40 @@ def clinic_dashboard(user: dict = Depends(get_current_user)):
         "history": history,
         "latest": latest,
     }
+
+
+@app.post("/api/clinic/submission")
+def update_submission(req: UpdateSubmissionRequest, request: Request,
+                      user: dict = Depends(get_current_user)):
+    """Update submission status for a quarter.
+    Clinic admin or quality officer can mark quarters as reviewed/submitted."""
+    if user["role"] not in [ROLE_SUPER_ADMIN, ROLE_CLINIC_ADMIN, ROLE_QUALITY_OFFICER]:
+        raise HTTPException(403, "Insufficient permissions")
+    facility_id = user.get("facility_id")
+    if not facility_id:
+        raise HTTPException(400, "No facility associated with your account")
+    try:
+        update_submission_status(
+            facility_id=facility_id,
+            quarter=req.quarter,
+            status=req.status,
+            notes=req.notes or "",
+            updated_by=user.get("email", ""),
+        )
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    try:
+        log_audit(
+            facility_id=facility_id,
+            action="submission_status_update",
+            quarter=req.quarter,
+            details={"status": req.status, "notes": req.notes},
+            user_email=user.get("email"),
+            ip_address=_get_client_ip(request),
+        )
+    except Exception as e:
+        log.error(f"Audit log error: {e}")
+    return {"success": True, "quarter": req.quarter, "status": req.status}
 
 
 @app.post("/api/validate")

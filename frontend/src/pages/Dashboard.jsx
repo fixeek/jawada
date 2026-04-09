@@ -2,13 +2,83 @@ import { useState, useRef, useEffect } from 'react'
 import { ArrowLeft, Download, CheckCircle, AlertTriangle, XCircle, Building, Activity,
          FileBarChart, Layers, Target, ChevronDown, ShieldCheck, ShieldAlert, ShieldX,
          ClipboardList, ArrowRight, Printer, Copy, ExternalLink, TrendingUp, TrendingDown, Minus,
-         ScrollText } from 'lucide-react'
+         ScrollText, CalendarDays, Clock, BarChart3, AlertCircle } from 'lucide-react'
+import axios from 'axios'
 import { api } from '../utils/api'
 import KPICard from '../components/KPICard'
 import KPIModal from '../components/KPIModal'
 import DataQuality from '../components/DataQuality'
 import PrintReport from '../components/PrintReport'
 import TrendChart from '../components/TrendChart'
+
+const SUBMIT_BASE = import.meta.env.VITE_API_URL || ''
+
+const STATUS_STEPS = [
+  { value: 'calculated', label: 'Calculated', color: 'bg-blue-400' },
+  { value: 'under_review', label: 'Under Review', color: 'bg-amber-400' },
+  { value: 'approved', label: 'Approved', color: 'bg-violet-400' },
+  { value: 'submitted', label: 'Submitted to DOH', color: 'bg-teal-400' },
+  { value: 'accepted', label: 'Accepted', color: 'bg-emerald-500' },
+]
+
+function SubmissionTracker({ quarter, submission, onUpdate }) {
+  const currentStatus = submission?.status || 'calculated'
+  const currentIdx = STATUS_STEPS.findIndex(s => s.value === currentStatus)
+
+  async function advanceStatus(newStatus) {
+    try {
+      await axios.post(`${SUBMIT_BASE}/api/clinic/submission`, {
+        quarter, status: newStatus, notes: '',
+      })
+      onUpdate?.()
+    } catch {}
+  }
+
+  const nextStep = currentIdx < STATUS_STEPS.length - 1 ? STATUS_STEPS[currentIdx + 1] : null
+
+  return (
+    <div className="bg-white rounded-2xl border border-gray-100 shadow-card p-5 mb-6">
+      <div className="flex items-center justify-between mb-4">
+        <h3 className="text-xs font-bold text-navy-500 uppercase tracking-wider">Submission Status — {quarter}</h3>
+        {submission?.updated_by && (
+          <span className="text-[9px] text-gray-400">
+            Updated by {submission.updated_by} · {submission.updated_at ? new Date(submission.updated_at).toLocaleDateString('en-GB') : ''}
+          </span>
+        )}
+      </div>
+      {/* Progress bar */}
+      <div className="flex items-center gap-1 mb-4">
+        {STATUS_STEPS.map((step, i) => (
+          <div key={step.value} className="flex-1 flex items-center gap-1">
+            <div className={`h-2 flex-1 rounded-full transition-all ${
+              i <= currentIdx ? step.color : 'bg-gray-100'
+            }`} />
+          </div>
+        ))}
+      </div>
+      {/* Labels */}
+      <div className="flex items-center justify-between text-[9px] font-bold uppercase tracking-wider mb-3">
+        {STATUS_STEPS.map((step, i) => (
+          <span key={step.value} className={i <= currentIdx ? 'text-navy-500' : 'text-gray-300'}>
+            {step.label}
+          </span>
+        ))}
+      </div>
+      {/* Action button */}
+      {nextStep && (
+        <button onClick={() => advanceStatus(nextStep.value)}
+          className="text-xs font-bold text-teal-600 hover:text-teal-700 bg-teal-50 hover:bg-teal-100 px-4 py-2 rounded-lg border border-teal-100 transition-colors">
+          Mark as {nextStep.label}
+        </button>
+      )}
+      {!nextStep && currentStatus === 'accepted' && (
+        <span className="text-xs font-bold text-emerald-600 bg-emerald-50 px-4 py-2 rounded-lg border border-emerald-100 inline-block">
+          DOH Accepted
+        </span>
+      )}
+    </div>
+  )
+}
 
 /* ── Readiness Verdict ─────────────────────────────────────────────────────── */
 
@@ -615,16 +685,110 @@ function AuditTrail({ facility }) {
 
 /* ── Main Dashboard ────────────────────────────────────────────────────────── */
 
+/* ── DOH deadline helper ────────────────────────────────────────────────── */
+
+function getDohDeadline() {
+  const now = new Date()
+  const y = now.getFullYear()
+  const m = now.getMonth() + 1
+  // DOH quarterly deadlines: Q1→Apr 30, Q2→Jul 31, Q3→Oct 31, Q4→Jan 31 next year
+  const deadlines = [
+    { q: `Q1 ${y}`, date: new Date(y, 3, 30), label: 'Apr 30' },
+    { q: `Q2 ${y}`, date: new Date(y, 6, 31), label: 'Jul 31' },
+    { q: `Q3 ${y}`, date: new Date(y, 9, 31), label: 'Oct 31' },
+    { q: `Q4 ${y}`, date: new Date(y + 1, 0, 31), label: 'Jan 31' },
+  ]
+  const next = deadlines.find(d => d.date > now)
+  if (!next) return null
+  const daysLeft = Math.ceil((next.date - now) / (1000 * 60 * 60 * 24))
+  return { ...next, daysLeft }
+}
+
+/* ── Summary Strip ─────────────────────────────────────────────────────── */
+
+function SummaryStrip({ quarterCount, lastUpload, overallTrend, deadline }) {
+  return (
+    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
+      <div className="bg-white rounded-xl border border-gray-100 shadow-card px-4 py-3.5 flex items-center gap-3">
+        <div className="w-9 h-9 bg-blue-50 rounded-lg flex items-center justify-center flex-shrink-0">
+          <CalendarDays size={16} className="text-blue-500" />
+        </div>
+        <div>
+          <div className="text-sm font-black text-navy-500">{quarterCount}</div>
+          <div className="text-[9px] text-gray-500 font-semibold uppercase tracking-wider">Quarters</div>
+        </div>
+      </div>
+      <div className="bg-white rounded-xl border border-gray-100 shadow-card px-4 py-3.5 flex items-center gap-3">
+        <div className="w-9 h-9 bg-teal-50 rounded-lg flex items-center justify-center flex-shrink-0">
+          <Clock size={16} className="text-teal-500" />
+        </div>
+        <div>
+          <div className="text-sm font-black text-navy-500">{lastUpload || '—'}</div>
+          <div className="text-[9px] text-gray-500 font-semibold uppercase tracking-wider">Last Upload</div>
+        </div>
+      </div>
+      <div className="bg-white rounded-xl border border-gray-100 shadow-card px-4 py-3.5 flex items-center gap-3">
+        <div className={`w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0 ${
+          overallTrend === 'improving' ? 'bg-emerald-50' :
+          overallTrend === 'declining' ? 'bg-red-50' : 'bg-gray-50'
+        }`}>
+          {overallTrend === 'improving' ? <TrendingUp size={16} className="text-emerald-500" /> :
+           overallTrend === 'declining' ? <TrendingDown size={16} className="text-red-500" /> :
+           <Minus size={16} className="text-gray-400" />}
+        </div>
+        <div>
+          <div className={`text-sm font-black ${
+            overallTrend === 'improving' ? 'text-emerald-600' :
+            overallTrend === 'declining' ? 'text-red-500' : 'text-gray-500'
+          }`}>
+            {overallTrend === 'improving' ? 'Improving' :
+             overallTrend === 'declining' ? 'Declining' : 'Stable'}
+          </div>
+          <div className="text-[9px] text-gray-500 font-semibold uppercase tracking-wider">Overall Trend</div>
+        </div>
+      </div>
+      <div className={`bg-white rounded-xl border shadow-card px-4 py-3.5 flex items-center gap-3 ${
+        deadline && deadline.daysLeft <= 14 ? 'border-amber-200' : 'border-gray-100'
+      }`}>
+        <div className={`w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0 ${
+          deadline && deadline.daysLeft <= 14 ? 'bg-amber-50' : 'bg-violet-50'
+        }`}>
+          <AlertCircle size={16} className={deadline && deadline.daysLeft <= 14 ? 'text-amber-500' : 'text-violet-500'} />
+        </div>
+        <div>
+          {deadline ? (
+            <>
+              <div className={`text-sm font-black ${deadline.daysLeft <= 14 ? 'text-amber-600' : 'text-navy-500'}`}>
+                {deadline.label}
+              </div>
+              <div className="text-[9px] text-gray-500 font-semibold uppercase tracking-wider">
+                {deadline.q} Due · {deadline.daysLeft}d left
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="text-sm font-black text-gray-400">—</div>
+              <div className="text-[9px] text-gray-500 font-semibold uppercase tracking-wider">Next Deadline</div>
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export default function Dashboard({ results, onBack, onAudit }) {
   const [modal, setModal] = useState(null)
   const printRef = useRef()
+  const [viewingQuarter, setViewingQuarter] = useState(null) // null = latest (from results)
+  const [submissionOverrides, setSubmissionOverrides] = useState({}) // quarter -> submission obj
 
   function handlePrint() {
     const printContent = printRef.current
     if (!printContent) return
     const win = window.open('', '_blank')
     win.document.write(`
-      <html><head><title>Jawda KPI Report — ${results.facility} — ${results.quarter}</title>
+      <html><head><title>Jawda KPI Report — ${results.facility} — ${activeQ}</title>
       <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body { font-family: Arial, sans-serif; font-size: 11px; color: #0D2137; padding: 20px; }
@@ -641,18 +805,57 @@ export default function Dashboard({ results, onBack, onAudit }) {
   }
 
   if (!results) return null
-  const kpiEntries = Object.entries(results.kpis || {}).filter(([id]) => !id.startsWith('ERROR'))
-  const errorEntries = Object.entries(results.kpis || {}).filter(([id]) => id.startsWith('ERROR'))
-  const runAt = results.run_at ? new Date(results.run_at).toLocaleString('en-GB') : ''
-  const summary = results.jawda_summary
 
   // History / trend data
   const history = results.history || {}
   const quarterList = Object.keys(history).sort()
-  const currentQ = results.quarter
-  const currentIdx = quarterList.indexOf(currentQ)
-  const prevQ = currentIdx > 0 ? quarterList[currentIdx - 1] : null
+  const latestQ = results.quarter
+  const activeQ = viewingQuarter || latestQ
+
+  // Build the active quarter's data — either from results (latest) or from history
+  const isLatest = activeQ === latestQ
+  const activeKpis = isLatest ? (results.kpis || {}) : (history[activeQ]?.kpis || {})
+  const activeSummary = isLatest ? results.jawda_summary : (history[activeQ]?.jawda_summary || {})
+  const activeRecords = isLatest ? results.total_records : (history[activeQ]?.total_records || 0)
+
+  const kpiEntries = Object.entries(activeKpis).filter(([id]) => !id.startsWith('ERROR'))
+  const errorEntries = Object.entries(activeKpis).filter(([id]) => id.startsWith('ERROR'))
+  const summary = activeSummary
+
+  // Previous quarter relative to the active quarter
+  const activeIdx = quarterList.indexOf(activeQ)
+  const prevQ = activeIdx > 0 ? quarterList[activeIdx - 1] : null
   const prevData = prevQ ? history[prevQ] : null
+
+  // Overall trend: compare latest vs earliest readiness_pct
+  const overallTrend = (() => {
+    if (quarterList.length < 2) return 'stable'
+    const first = history[quarterList[0]]?.jawda_summary?.meeting_target || 0
+    const last = history[quarterList[quarterList.length - 1]]?.jawda_summary?.meeting_target || 0
+    if (last > first) return 'improving'
+    if (last < first) return 'declining'
+    return 'stable'
+  })()
+
+  // Last upload date
+  const lastUpload = (() => {
+    const uploaded = history[quarterList[quarterList.length - 1]]?.uploaded_at
+    if (uploaded) {
+      const d = new Date(uploaded)
+      const now = new Date()
+      const diffDays = Math.floor((now - d) / (1000 * 60 * 60 * 24))
+      if (diffDays === 0) return 'Today'
+      if (diffDays === 1) return 'Yesterday'
+      if (diffDays < 7) return `${diffDays}d ago`
+      return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })
+    }
+    if (results.run_at) {
+      return new Date(results.run_at).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })
+    }
+    return null
+  })()
+
+  const deadline = getDohDeadline()
 
   return (
     <div className="min-h-screen">
@@ -662,10 +865,14 @@ export default function Dashboard({ results, onBack, onAudit }) {
         <div className="flex items-center gap-3">
           <Activity size={16} className="text-teal-500" />
           <span className="text-sm font-bold text-navy-500">KPI Dashboard</span>
-          <span className="text-xs text-gray-400">{runAt}</span>
+          {!isLatest && (
+            <span className="text-[10px] font-bold text-amber-600 bg-amber-50 px-2 py-0.5 rounded border border-amber-100">
+              Viewing {activeQ}
+            </span>
+          )}
         </div>
         <div className="flex items-center gap-2">
-          <ExportButtons results={results} onPrint={handlePrint} />
+          <ExportButtons results={{ ...results, kpis: activeKpis, jawda_summary: activeSummary, quarter: activeQ }} onPrint={handlePrint} />
         </div>
       </div>
 
@@ -681,36 +888,56 @@ export default function Dashboard({ results, onBack, onAudit }) {
               <h1 className="text-2xl sm:text-3xl font-black text-navy-500 tracking-tight">{results.facility}</h1>
               <div className="flex items-center gap-3 mt-1.5">
                 <span className="text-xs bg-gradient-to-r from-teal-50 to-emerald-50 text-teal-700 px-3 py-1 rounded-lg font-bold border border-teal-100/50">
-                  {results.quarter}
+                  {activeQ}
                 </span>
                 <span className="text-xs text-gray-500">
-                  {results.total_records?.toLocaleString()} records · DOH Jawda V2 2026
+                  {activeRecords ? `${activeRecords.toLocaleString()} records · ` : ''}DOH Jawda V2 2026
                 </span>
+                {!isLatest && (
+                  <button onClick={() => setViewingQuarter(null)}
+                    className="text-[10px] font-bold text-teal-600 hover:text-teal-700 bg-teal-50 px-2 py-0.5 rounded border border-teal-100 transition-colors">
+                    Back to latest
+                  </button>
+                )}
               </div>
             </div>
           </div>
         </div>
 
-        {/* Quarter tabs — show if history has multiple quarters */}
+        {/* Summary strip — only on latest quarter view */}
+        {isLatest && (
+          <SummaryStrip
+            quarterCount={quarterList.length}
+            lastUpload={lastUpload}
+            overallTrend={overallTrend}
+            deadline={deadline}
+          />
+        )}
+
+        {/* Quarter tabs — clickable */}
         {quarterList.length > 1 && (
-          <div className="flex items-center gap-2 mb-6">
-            <span className="text-xs text-gray-500 font-medium mr-2">Quarters:</span>
+          <div className="flex items-center gap-2 mb-6 flex-wrap">
+            <span className="text-xs text-gray-500 font-medium mr-1">Quarters:</span>
             {quarterList.map(q => (
-              <span key={q} className={`text-xs px-3 py-1.5 rounded-lg font-bold transition-all ${
-                q === currentQ
-                  ? 'bg-navy-500 text-white shadow-card'
-                  : 'bg-gray-100 text-gray-500'
-              }`}>
+              <button key={q} onClick={() => setViewingQuarter(q === latestQ ? null : q)}
+                className={`text-xs px-3 py-1.5 rounded-lg font-bold transition-all ${
+                  q === activeQ
+                    ? 'bg-navy-500 text-white shadow-card'
+                    : 'bg-gray-100 text-gray-500 hover:bg-gray-200 hover:text-navy-500'
+                }`}>
                 {q}
                 {history[q]?.jawda_summary && (
                   <span className={`ml-1.5 ${
-                    history[q].jawda_summary.verdict === 'ready' ? 'text-emerald-300' :
-                    history[q].jawda_summary.verdict === 'attention' ? 'text-amber-300' : 'text-red-300'
+                    q === activeQ
+                      ? (history[q].jawda_summary.verdict === 'ready' ? 'text-emerald-300' :
+                         history[q].jawda_summary.verdict === 'attention' ? 'text-amber-300' : 'text-red-300')
+                      : (history[q].jawda_summary.verdict === 'ready' ? 'text-emerald-500' :
+                         history[q].jawda_summary.verdict === 'attention' ? 'text-amber-500' : 'text-red-400')
                   }`}>
                     {history[q].jawda_summary.meeting_target}/{history[q].jawda_summary.calculable}
                   </span>
                 )}
-              </span>
+              </button>
             ))}
             {prevData && (
               <span className="text-[10px] text-gray-400 ml-auto">
@@ -723,15 +950,34 @@ export default function Dashboard({ results, onBack, onAudit }) {
         {/* Readiness Verdict */}
         <ReadinessVerdict summary={summary} results={results} />
 
+        {/* Submission Tracker */}
+        <SubmissionTracker
+          quarter={activeQ}
+          submission={submissionOverrides[activeQ] || history[activeQ]?.submission}
+          onUpdate={() => {
+            axios.get(`${SUBMIT_BASE}/api/clinic/dashboard`)
+              .then(res => {
+                const newSubs = {}
+                for (const q of Object.keys(res.data?.history || {})) {
+                  if (res.data.history[q]?.submission) {
+                    newSubs[q] = res.data.history[q].submission
+                  }
+                }
+                setSubmissionOverrides(prev => ({ ...prev, ...newSubs }))
+              })
+              .catch(() => {})
+          }}
+        />
+
         {/* Jawda Portal Ready */}
-        <JawdaPortalView kpis={results.kpis || {}} facility={results.facility} quarter={results.quarter} />
+        <JawdaPortalView kpis={activeKpis} facility={results.facility} quarter={activeQ} />
 
         {/* Summary cards */}
-        <SummaryBar kpis={results.kpis || {}} />
+        <SummaryBar kpis={activeKpis} />
 
         {/* KPI Grid */}
         <div className="mt-8">
-          <SectionHeader icon={FileBarChart} title="All 8 Official KPIs — DOH V2 2026" />
+          <SectionHeader icon={FileBarChart} title={`KPI Results — ${activeQ}`} />
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             {kpiEntries.map(([id, kpi], i) => {
               const prevKpi = prevData?.kpis?.[id] || null
@@ -748,20 +994,20 @@ export default function Dashboard({ results, onBack, onAudit }) {
         {quarterList.length > 1 && (
           <div className="mt-8">
             <SectionHeader icon={TrendingUp} title={`KPI Trends — ${quarterList.length} Quarters`} />
-            <TrendChart history={history} currentQuarter={currentQ} />
+            <TrendChart history={history} currentQuarter={activeQ} />
           </div>
         )}
 
         {/* Quarter Comparison */}
         <QuarterComparison
-          currentQ={currentQ}
-          currentKpis={results.kpis || {}}
+          currentQ={activeQ}
+          currentKpis={activeKpis}
           prevQ={prevQ}
           prevData={prevData}
         />
 
         {/* Action Plan */}
-        <ActionPlan kpis={results.kpis || {}} />
+        <ActionPlan kpis={activeKpis} />
 
         {/* Errors */}
         {errorEntries.length > 0 && (

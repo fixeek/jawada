@@ -153,10 +153,23 @@ def init_db():
             created_at TIMESTAMP DEFAULT NOW()
         );
 
+        CREATE TABLE IF NOT EXISTS submission_status (
+            id SERIAL PRIMARY KEY,
+            facility_id INTEGER REFERENCES facilities(id),
+            quarter VARCHAR(20) NOT NULL,
+            status VARCHAR(30) DEFAULT 'calculated',
+            notes TEXT DEFAULT '',
+            updated_by VARCHAR(255),
+            updated_at TIMESTAMP DEFAULT NOW(),
+            created_at TIMESTAMP DEFAULT NOW(),
+            UNIQUE(facility_id, quarter)
+        );
+
         CREATE INDEX IF NOT EXISTS idx_kpi_facility_quarter ON kpi_results(facility_id, quarter);
         CREATE INDEX IF NOT EXISTS idx_summary_facility ON jawda_summaries(facility_id);
         CREATE INDEX IF NOT EXISTS idx_audit_facility ON audit_log(facility_id);
         CREATE INDEX IF NOT EXISTS idx_audit_created ON audit_log(created_at);
+        CREATE INDEX IF NOT EXISTS idx_submission_facility ON submission_status(facility_id);
     """)
     conn.commit()
     cur.close()
@@ -713,4 +726,63 @@ def get_facility_history_by_id(facility_id: int) -> dict:
             history[q]["data_quality"] = row["data_quality"] or {}
             history[q]["uploaded_at"] = row["uploaded_at"].isoformat() if row["uploaded_at"] else None
 
+    # Attach submission status per quarter
+    conn2 = get_conn()
+    cur2 = conn2.cursor(cursor_factory=RealDictCursor)
+    cur2.execute("""
+        SELECT quarter, status, notes, updated_by, updated_at
+        FROM submission_status
+        WHERE facility_id = %s
+    """, (facility_id,))
+    for row in cur2.fetchall():
+        q = row["quarter"]
+        if q in history:
+            history[q]["submission"] = {
+                "status": row["status"],
+                "notes": row["notes"] or "",
+                "updated_by": row["updated_by"],
+                "updated_at": row["updated_at"].isoformat() if row["updated_at"] else None,
+            }
+    cur2.close()
+    conn2.close()
+
     return history
+
+
+# ── Submission Status ─────────────────────────────────────────────────
+
+SUBMISSION_STATUSES = ["calculated", "under_review", "approved", "submitted", "accepted"]
+
+def get_submission_status(facility_id: int) -> list:
+    """Get all submission statuses for a facility."""
+    conn = get_conn()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+    cur.execute("""
+        SELECT quarter, status, notes, updated_by, updated_at
+        FROM submission_status
+        WHERE facility_id = %s
+        ORDER BY quarter
+    """, (facility_id,))
+    rows = cur.fetchall()
+    cur.close()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def update_submission_status(facility_id: int, quarter: str, status: str,
+                              notes: str = "", updated_by: str = ""):
+    """Update or create submission status for a facility quarter."""
+    if status not in SUBMISSION_STATUSES:
+        raise ValueError(f"Invalid status: {status}. Must be one of: {SUBMISSION_STATUSES}")
+    conn = get_conn()
+    cur = conn.cursor()
+    cur.execute("""
+        INSERT INTO submission_status (facility_id, quarter, status, notes, updated_by, updated_at)
+        VALUES (%s, %s, %s, %s, %s, NOW())
+        ON CONFLICT (facility_id, quarter)
+        DO UPDATE SET status = EXCLUDED.status, notes = EXCLUDED.notes,
+                      updated_by = EXCLUDED.updated_by, updated_at = NOW()
+    """, (facility_id, quarter, status, notes, updated_by))
+    conn.commit()
+    cur.close()
+    conn.close()

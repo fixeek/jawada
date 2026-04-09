@@ -1,4 +1,4 @@
-import { X, AlertTriangle, Info, TrendingUp, TrendingDown, Users, Target, CheckCircle } from 'lucide-react'
+import { X, AlertTriangle, Info, TrendingUp, TrendingDown, Users, Target, CheckCircle, Calculator } from 'lucide-react'
 
 const OFFICIAL_DEFS = {
   OMC001: { threshold: 'Ratio >= 0.50', pop: 'Age 5-64, moderate-to-severe asthma (J45.40-J45.52)', needs: 'Prescription data — controller vs reliever drug units per patient per quarter. Pharmacy integration required.' },
@@ -122,6 +122,59 @@ export default function KPIModal({ data, onClose }) {
                 <p className="text-sm text-gray-500 mt-0.5">Required data fields are missing from the uploaded file.</p>
               </div>
             </div>
+          )}
+
+          {/* Gap-to-target calculator */}
+          {kpi.denominator > 0 && kpi.meets_target === false && (
+            (() => {
+              const target = kpi.target || 0
+              const num = kpi.numerator || 0
+              const den = kpi.denominator || 1
+              let needed, scenario
+              if (direction === 'lower') {
+                // Need to reduce numerator so num/den <= target/100
+                const maxNum = Math.floor(den * target / 100)
+                needed = num - maxNum
+                scenario = `Reduce ${needed} patient${needed !== 1 ? 's' : ''} from the risk group`
+              } else {
+                // Need to increase numerator so num/den >= target/100
+                const minNum = Math.ceil(den * target / 100)
+                needed = minNum - num
+                scenario = `${needed} more patient${needed !== 1 ? 's' : ''} need${needed === 1 ? 's' : ''} to meet criteria`
+              }
+              if (needed <= 0) return null
+              const newPct = direction === 'lower'
+                ? Math.round(((num - needed) / den) * 1000) / 10
+                : Math.round(((num + needed) / den) * 1000) / 10
+              return (
+                <div className="bg-gradient-to-r from-violet-50 to-blue-50/50 border border-violet-100/60 rounded-2xl p-5">
+                  <div className="flex gap-4 items-start">
+                    <div className="w-9 h-9 bg-white rounded-xl flex items-center justify-center flex-shrink-0 shadow-sm">
+                      <Calculator size={16} className="text-violet-500" />
+                    </div>
+                    <div className="flex-1">
+                      <p className="text-sm font-bold text-violet-800">Gap to Target</p>
+                      <p className="text-sm text-violet-700/80 mt-1">{scenario} to reach {direction === 'lower' ? '≤' : '≥'}{target}%.</p>
+                      <div className="mt-3 flex items-center gap-3">
+                        <div className="text-center">
+                          <div className="text-lg font-black text-red-500">{kpi.percentage}%</div>
+                          <div className="text-[9px] text-gray-500 font-bold uppercase">Now</div>
+                        </div>
+                        <div className="text-gray-300 font-bold">→</div>
+                        <div className="text-center">
+                          <div className="text-lg font-black text-emerald-600">{newPct}%</div>
+                          <div className="text-[9px] text-gray-500 font-bold uppercase">Target</div>
+                        </div>
+                        <div className="ml-auto text-right">
+                          <div className="text-2xl font-black text-violet-700">{needed}</div>
+                          <div className="text-[9px] text-gray-500 font-bold uppercase">Patients</div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )
+            })()
           )}
 
           {/* Official definition */}
