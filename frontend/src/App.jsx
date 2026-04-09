@@ -427,106 +427,55 @@ function AppShell() {
           )
         }
 
-        // Empty state — no data yet
+        // Empty state — no data yet, clean welcome screen
         return (
           <div className="min-h-screen">
-            <div className="max-w-5xl mx-auto px-6 py-12">
-              {/* Header */}
-              <div className="flex items-center gap-4 mb-10">
-                <div className="w-14 h-14 bg-gradient-to-br from-navy-50 to-navy-100/50 rounded-2xl flex items-center justify-center shadow-card">
-                  <Building size={22} className="text-navy-400" />
+            <div className="max-w-3xl mx-auto px-6 py-16">
+              <div className="text-center mb-10">
+                <div className="w-20 h-20 bg-gradient-to-br from-navy-50 to-navy-100/50 rounded-3xl flex items-center justify-center shadow-card mx-auto mb-6">
+                  <Building size={32} className="text-navy-400" />
                 </div>
-                <div>
-                  <h1 className="text-2xl font-black text-navy-500">{user.facility_name || 'Your Clinic'}</h1>
-                  <p className="text-sm text-gray-500">DOH Jawda KPI Dashboard</p>
-                </div>
+                <h1 className="text-3xl font-black text-navy-500 mb-2">{user.facility_name || 'Your Clinic'}</h1>
+                <p className="text-gray-500 text-sm">Jawda KPI Dashboard</p>
               </div>
 
-              {/* Empty KPI cards — all 8 KPIs showing no data */}
-              <div className="mb-8">
-                <h2 className="text-sm font-bold text-navy-500 mb-4">8 Official DOH KPIs — V2 2026</h2>
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                  {[
-                    { id: 'OMC001', title: 'Asthma Medication Ratio', target: '50', dir: 'higher' },
-                    { id: 'OMC002', title: 'Avoidance of Antibiotics', target: '50', dir: 'higher' },
-                    { id: 'OMC003', title: 'Time to See Physician', target: '80', dir: 'higher' },
-                    { id: 'OMC004', title: 'BMI Assessment & Counselling', target: '50', dir: 'higher' },
-                    { id: 'OMC005', title: 'Diabetes HbA1c Control', target: '36', dir: 'higher' },
-                    { id: 'OMC006', title: 'Controlling High BP', target: '50', dir: 'higher' },
-                    { id: 'OMC007', title: 'Opioid Use Risk', target: '10', dir: 'lower' },
-                    { id: 'OMC008', title: 'Kidney Disease Eval (eGFR)', target: '50', dir: 'higher' },
-                  ].map(kpi => (
-                    <div key={kpi.id} className="bg-white rounded-2xl border border-gray-100 shadow-card p-5">
-                      <div className="flex items-start justify-between mb-3">
-                        <span className="text-[10px] font-black text-navy-500 bg-navy-50/60 px-2 py-0.5 rounded">{kpi.id}</span>
-                        <span className="text-[9px] text-gray-400 font-medium">{kpi.dir === 'lower' ? '≤' : '≥'}{kpi.target}%</span>
-                      </div>
-                      <p className="text-xs text-gray-600 font-medium mb-4 line-clamp-2">{kpi.title}</p>
-                      <div className="h-12 flex items-center justify-center">
-                        <span className="text-2xl font-black text-gray-200">—</span>
-                      </div>
-                      <p className="text-[9px] text-gray-400 text-center mt-1">No data yet</p>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              {/* Getting started section */}
-              <div className="bg-gradient-to-r from-navy-500 to-navy-400 rounded-2xl p-8 text-center">
+              {/* Main CTA */}
+              <div className="bg-gradient-to-r from-navy-500 to-navy-400 rounded-2xl p-8 sm:p-10 text-center mb-8">
                 <div className="w-16 h-16 bg-white/10 rounded-2xl flex items-center justify-center mx-auto mb-5">
                   <Upload size={28} className="text-teal-300" />
                 </div>
-                <h2 className="text-xl font-black text-white mb-2">Get Started</h2>
-                <p className="text-navy-200 text-sm leading-relaxed max-w-lg mx-auto mb-6">
-                  Upload your clinic's HIS data export files to calculate Jawda KPIs.
-                  You need at least the <strong className="text-white">KPI Excel file</strong> — Time Data, Visit Details,
-                  and E-Claims are optional but improve accuracy.
+                <h2 className="text-xl font-black text-white mb-2">No KPI Data Yet</h2>
+                <p className="text-navy-200 text-sm leading-relaxed max-w-md mx-auto mb-6">
+                  Upload your clinic's data files to see your Jawda KPI results here.
+                  Start with the current quarter, or backfill historical quarters to build your trend.
                 </p>
-                {canUpload(user) && (
+                {canUpload(user) ? (
                   <button onClick={() => setPage('upload')}
                     className="bg-white text-navy-500 font-bold text-sm px-8 py-3.5 rounded-xl shadow-elevated hover:shadow-card-hover transition-all inline-flex items-center gap-2">
-                    Upload & Calculate <ArrowRight size={16} />
+                    Upload Data <ArrowRight size={16} />
                   </button>
-                )}
-                {!canUpload(user) && (
+                ) : (
                   <p className="text-navy-300 text-xs font-medium">Ask your clinic admin or quality officer to upload data.</p>
                 )}
               </div>
 
-              {/* What you'll get */}
-              <div className="mt-8 grid grid-cols-2 lg:grid-cols-4 gap-4">
+              {/* What happens after upload */}
+              <h3 className="text-xs font-bold text-navy-500 uppercase tracking-wider mb-4 text-center">What You'll See After Uploading</h3>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                 {[
-                  { icon: Target, label: 'Pass / Fail', sub: 'Per-KPI vs DOH targets', color: 'text-teal-500', bg: 'from-teal-50 to-emerald-50' },
-                  { icon: ClipboardList, label: 'Action Plan', sub: 'Prioritised fix steps', color: 'text-blue-500', bg: 'from-blue-50 to-indigo-50' },
-                  { icon: FileWarning, label: 'Data Quality', sub: 'Field completeness check', color: 'text-amber-500', bg: 'from-amber-50 to-orange-50' },
-                  { icon: BarChart3, label: 'DOH Export', sub: 'Ready for Jawda portal', color: 'text-violet-500', bg: 'from-violet-50 to-purple-50' },
+                  { icon: Target, label: 'KPI Results', sub: '8 DOH KPIs with pass/fail', color: 'text-teal-500', bg: 'from-teal-50 to-emerald-50' },
+                  { icon: ClipboardList, label: 'Action Plan', sub: 'Steps to fix gaps', color: 'text-blue-500', bg: 'from-blue-50 to-indigo-50' },
+                  { icon: FileWarning, label: 'Data Quality', sub: 'Completeness check', color: 'text-amber-500', bg: 'from-amber-50 to-orange-50' },
+                  { icon: BarChart3, label: 'DOH Export', sub: 'Jawda portal ready', color: 'text-violet-500', bg: 'from-violet-50 to-purple-50' },
                 ].map(({ icon: Icon, label, sub, color, bg }) => (
-                  <div key={label} className="bg-white rounded-2xl border border-gray-100 shadow-card p-5">
-                    <div className={`w-10 h-10 bg-gradient-to-br ${bg} rounded-xl flex items-center justify-center mb-3`}>
-                      <Icon size={18} className={color} />
+                  <div key={label} className="bg-white rounded-xl border border-gray-100 shadow-card p-4 text-center">
+                    <div className={`w-10 h-10 bg-gradient-to-br ${bg} rounded-xl flex items-center justify-center mx-auto mb-2`}>
+                      <Icon size={16} className={color} />
                     </div>
-                    <h3 className="text-xs font-bold text-navy-500 mb-0.5">{label}</h3>
-                    <p className="text-[10px] text-gray-500">{sub}</p>
+                    <p className="text-[11px] font-bold text-navy-500">{label}</p>
+                    <p className="text-[9px] text-gray-500">{sub}</p>
                   </div>
                 ))}
-              </div>
-
-              {/* Footer badges */}
-              <div className="mt-10 flex flex-wrap items-center justify-center gap-4 sm:gap-8 text-xs text-gray-400">
-                <div className="flex items-center gap-2">
-                  <Shield size={13} className="text-teal-400" />
-                  <span className="font-medium">ADHICS Compliant</span>
-                </div>
-                <div className="hidden sm:block w-px h-4 bg-gray-200" />
-                <div className="flex items-center gap-2">
-                  <Activity size={13} className="text-teal-400" />
-                  <span className="font-medium">DOH V2 2026</span>
-                </div>
-                <div className="hidden sm:block w-px h-4 bg-gray-200" />
-                <div className="flex items-center gap-2">
-                  <Building size={13} className="text-teal-400" />
-                  <span className="font-medium">UAE North</span>
-                </div>
               </div>
             </div>
           </div>
