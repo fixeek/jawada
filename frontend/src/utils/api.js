@@ -1,6 +1,6 @@
 import axios from 'axios'
 
-const BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000'
+const BASE = import.meta.env.VITE_API_URL ?? ''
 
 export const api = {
   // Multi-file validation (4 current + 4 previous quarter slots)
