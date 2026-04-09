@@ -62,7 +62,7 @@ function FileSlot({ label, description, required, icon: Icon, file, onFile, onCl
 
 /* ── Main Upload Page ───────────────────────────────────────────────── */
 
-export default function UploadPage({ onResults, facility: facilityProp }) {
+export default function UploadPage({ onResults, facility: facilityProp, existingQuarters = [] }) {
   // Current quarter files
   const [files, setFiles] = useState({ kpiData: null, visitDetails: null, timeData: null, eclaims: null })
   // Previous quarter files
@@ -370,7 +370,24 @@ export default function UploadPage({ onResults, facility: facilityProp }) {
                 <div className="relative bg-white rounded-[20px] shadow-elevated border border-gray-100/80 p-7">
 
                   <h2 className="text-sm font-bold text-navy-500 mb-1">Upload Data Files</h2>
-                  <p className="text-xs text-gray-500 mb-5">KPI Data is required. Other files add more KPI coverage.</p>
+                  <p className="text-xs text-gray-500 mb-4">KPI Data is required. Other files add more KPI coverage.</p>
+
+                  {/* Existing quarters indicator */}
+                  {existingQuarters.length > 0 && (
+                    <div className="mb-5 bg-navy-50/40 border border-navy-100/30 rounded-xl p-3.5">
+                      <p className="text-[10px] font-bold text-navy-500 uppercase tracking-wider mb-2">Quarters on File</p>
+                      <div className="flex flex-wrap gap-1.5">
+                        {existingQuarters.map(q => (
+                          <span key={q} className="text-[10px] font-bold px-2.5 py-1 rounded-lg bg-teal-50 text-teal-700 border border-teal-100">
+                            {q}
+                          </span>
+                        ))}
+                      </div>
+                      <p className="text-[9px] text-gray-500 mt-2">
+                        Upload a new quarter or re-upload an existing one to update it.
+                      </p>
+                    </div>
+                  )}
 
                   <div className="space-y-3">
                     <FileSlot

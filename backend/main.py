@@ -28,7 +28,9 @@ from typing import Optional
 # Database — try to connect, fall back to in-memory if unavailable
 USE_DB = False
 try:
-    from database import (init_db, save_results, get_facility_history, log_audit, get_audit_log,
+    from database import (init_db, save_results, get_facility_history, get_facility_history_by_id,
+                          save_facility_col_mapping,
+                          log_audit, get_audit_log,
                           get_platform_stats, get_platform_audit_log, get_system_health)
     init_db()
     USE_DB = True
@@ -180,6 +182,12 @@ def _save_to_history(facility: str, quarter: str, results: dict):
     if USE_DB:
         try:
             save_results(facility, results)
+            # Auto-save column mapping as clinic's default (first upload only)
+            col_mapping = results.get("col_mapping")
+            if col_mapping:
+                from database import get_or_create_facility
+                fid = get_or_create_facility(facility)
+                save_facility_col_mapping(fid, col_mapping)
         except Exception as e:
             log.error(f"DB save error: {e}")
 
@@ -693,6 +701,59 @@ def reset_user_password(user_id: int, req: ResetPasswordRequest, request: Reques
         "temp_password": new_password,
         "email_sent": email_sent,
         "must_change_password": True,
+    }
+
+
+# ─────────────────────────────────────────────────────────────────────────
+# CLINIC DASHBOARD — auto-load history for logged-in clinic user
+# ─────────────────────────────────────────────────────────────────────────
+
+@app.get("/api/clinic/dashboard")
+def clinic_dashboard(user: dict = Depends(get_current_user)):
+    """Return the logged-in user's clinic data: all quarters of KPI history,
+    plus metadata needed to render the dashboard immediately after login.
+    Returns empty structure if no uploads exist yet."""
+    facility_id = user.get("facility_id")
+    facility_name = user.get("facility_name", "")
+
+    if not facility_id:
+        # Super admins don't belong to a clinic
+        return {"has_data": False, "facility_name": "", "quarters": [], "history": {}, "latest": None}
+
+    history = {}
+    if USE_DB:
+        try:
+            history = get_facility_history_by_id(facility_id)
+        except Exception as e:
+            log.error(f"Failed to load clinic history: {e}")
+
+    if not history:
+        # Fall back to in-memory
+        history_key = facility_name.strip().lower()
+        history = facility_history.get(history_key, {})
+
+    quarters = sorted(history.keys())
+    latest_quarter = quarters[-1] if quarters else None
+    latest = None
+    if latest_quarter and latest_quarter in history:
+        q_data = history[latest_quarter]
+        latest = {
+            "quarter": latest_quarter,
+            "facility": facility_name,
+            "kpis": q_data.get("kpis", {}),
+            "jawda_summary": q_data.get("jawda_summary", {}),
+            "total_records": q_data.get("total_records", 0),
+            "col_mapping": q_data.get("col_mapping", {}),
+            "data_quality": q_data.get("data_quality", {}),
+            "history": history,
+        }
+
+    return {
+        "has_data": len(quarters) > 0,
+        "facility_name": facility_name,
+        "quarters": quarters,
+        "history": history,
+        "latest": latest,
     }
 
 

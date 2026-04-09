@@ -59,6 +59,7 @@ def init_db():
             BEGIN ALTER TABLE facilities ADD COLUMN contact_email VARCHAR(255); EXCEPTION WHEN duplicate_column THEN END;
             BEGIN ALTER TABLE facilities ADD COLUMN contact_phone VARCHAR(50); EXCEPTION WHEN duplicate_column THEN END;
             BEGIN ALTER TABLE facilities ADD COLUMN is_active BOOLEAN DEFAULT TRUE; EXCEPTION WHEN duplicate_column THEN END;
+            BEGIN ALTER TABLE facilities ADD COLUMN col_mapping_default JSONB DEFAULT '{}'; EXCEPTION WHEN duplicate_column THEN END;
         END $$;
 
         CREATE TABLE IF NOT EXISTS uploads (
@@ -244,6 +245,24 @@ def get_or_create_facility(name: str) -> int:
     cur.close()
     conn.close()
     return facility_id
+
+
+def save_facility_col_mapping(facility_id: int, col_mapping: dict):
+    """Auto-save detected column mapping as the facility's default.
+    Only writes if no default exists yet (first upload) — never silently
+    overwrites an existing mapping. This is the clinic's 'data profile'."""
+    if not col_mapping:
+        return
+    conn = get_conn()
+    cur = conn.cursor()
+    cur.execute("""
+        UPDATE facilities
+        SET col_mapping_default = %s
+        WHERE id = %s AND (col_mapping_default IS NULL OR col_mapping_default = '{}'::jsonb)
+    """, (json.dumps(col_mapping), facility_id))
+    conn.commit()
+    cur.close()
+    conn.close()
 
 
 def save_results(facility_name: str, results: dict) -> int:
@@ -610,5 +629,88 @@ def get_facility_history(facility_name: str) -> dict:
                 "readiness_pct": row["readiness_pct"],
                 "verdict": row["verdict"],
             }
+
+    return history
+
+
+def get_facility_history_by_id(facility_id: int) -> dict:
+    """Get all quarterly results for a facility by ID — same format as get_facility_history."""
+    conn = get_conn()
+    cur = conn.cursor(cursor_factory=RealDictCursor)
+
+    cur.execute("""
+        SELECT quarter, kpi_id, title, domain, numerator, denominator,
+               percentage, target, target_direction, meets_target, status,
+               gap_patients, missing_fields, notes
+        FROM kpi_results
+        WHERE facility_id = %s
+        ORDER BY quarter, kpi_id
+    """, (facility_id,))
+    kpi_rows = cur.fetchall()
+
+    cur.execute("""
+        SELECT quarter, total_kpis, calculable, meeting_target, below_target,
+               missing_data, proxy_data, readiness_pct, verdict
+        FROM jawda_summaries
+        WHERE facility_id = %s
+        ORDER BY quarter
+    """, (facility_id,))
+    summary_rows = cur.fetchall()
+
+    # Get the latest upload metadata per quarter
+    cur.execute("""
+        SELECT DISTINCT ON (quarter) quarter, total_records, files_used,
+               col_mapping, data_quality, uploaded_at
+        FROM uploads
+        WHERE facility_id = %s
+        ORDER BY quarter, uploaded_at DESC
+    """, (facility_id,))
+    upload_rows = cur.fetchall()
+
+    cur.close()
+    conn.close()
+
+    history = {}
+    for row in kpi_rows:
+        q = row["quarter"]
+        if q not in history:
+            history[q] = {"quarter": q, "kpis": {}, "jawda_summary": {}}
+        history[q]["kpis"][row["kpi_id"]] = {
+            "title": row["title"],
+            "domain": row["domain"],
+            "numerator": row["numerator"],
+            "denominator": row["denominator"],
+            "percentage": row["percentage"],
+            "target": row["target"],
+            "target_direction": row["target_direction"],
+            "meets_target": row["meets_target"],
+            "status": row["status"],
+            "gap_patients": row["gap_patients"],
+            "missing_fields": row["missing_fields"] or [],
+            "notes": row["notes"] or [],
+        }
+
+    for row in summary_rows:
+        q = row["quarter"]
+        if q in history:
+            history[q]["jawda_summary"] = {
+                "total_kpis": row["total_kpis"],
+                "calculable": row["calculable"],
+                "meeting_target": row["meeting_target"],
+                "below_target": row["below_target"],
+                "missing_data": row["missing_data"],
+                "proxy_data": row["proxy_data"],
+                "readiness_pct": row["readiness_pct"],
+                "verdict": row["verdict"],
+            }
+
+    for row in upload_rows:
+        q = row["quarter"]
+        if q in history:
+            history[q]["total_records"] = row["total_records"]
+            history[q]["files_used"] = row["files_used"] or []
+            history[q]["col_mapping"] = row["col_mapping"] or {}
+            history[q]["data_quality"] = row["data_quality"] or {}
+            history[q]["uploaded_at"] = row["uploaded_at"].isoformat() if row["uploaded_at"] else None
 
     return history

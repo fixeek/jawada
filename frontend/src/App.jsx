@@ -1,4 +1,5 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
+import axios from 'axios'
 import { LayoutDashboard, Upload, ScrollText, Settings, Building, ChevronLeft,
          ChevronRight, Activity, Shield, Menu, X, Target, ClipboardList,
          FileWarning, BarChart3, Sparkles, ChevronRight as ArrowRight,
@@ -318,12 +319,32 @@ function SettingsPage({ user }) {
   )
 }
 
+const BASE = import.meta.env.VITE_API_URL || ''
+
 function AppShell() {
   const { user, loading, logout } = useAuth()
   const [page, setPage] = useState('dashboard')
   const [results, setResults] = useState(null)
   const [collapsed, setCollapsed] = useState(false)
   const [selectedClinic, setSelectedClinic] = useState(null)
+  const [clinicLoading, setClinicLoading] = useState(false)
+  const [clinicHistory, setClinicHistory] = useState(null) // { has_data, quarters, history, latest }
+
+  // Auto-load clinic dashboard data on login (for clinic users only)
+  useEffect(() => {
+    if (!user || isSuperAdmin(user) || user.must_change_password) return
+    if (results) return  // Already have fresh results from a calculation
+    setClinicLoading(true)
+    axios.get(`${BASE}/api/clinic/dashboard`)
+      .then(res => {
+        setClinicHistory(res.data)
+        if (res.data.latest) {
+          setResults(res.data.latest)
+        }
+      })
+      .catch(() => setClinicHistory({ has_data: false, quarters: [], history: {}, latest: null }))
+      .finally(() => setClinicLoading(false))
+  }, [user?.id])
 
   // Set default page based on role
   const defaultPage = isSuperAdmin(user) ? 'overview' : 'dashboard'
@@ -353,6 +374,10 @@ function AppShell() {
   function handleResults(data) {
     setResults(data)
     setPage('dashboard')
+    // Refresh clinic history cache so quarter list stays in sync
+    axios.get(`${BASE}/api/clinic/dashboard`)
+      .then(res => setClinicHistory(res.data))
+      .catch(() => {})
   }
 
   function renderPage() {
@@ -379,76 +404,128 @@ function AppShell() {
     // Clinic user pages
     switch (page) {
       case 'dashboard':
-        return results ? (
-          <Dashboard
-            results={results}
-            onBack={() => setPage('upload')}
-            onAudit={() => setPage('audit')}
-          />
-        ) : (
-          <div className="min-h-screen relative overflow-hidden">
-            <div className="absolute top-0 right-0 w-[500px] h-[500px] bg-gradient-to-bl from-teal-50/60 to-transparent rounded-full -translate-y-1/3 translate-x-1/4 pointer-events-none" />
-            <div className="absolute bottom-0 left-0 w-[400px] h-[400px] bg-gradient-to-tr from-navy-50/40 to-transparent rounded-full translate-y-1/3 -translate-x-1/4 pointer-events-none" />
+        // Loading state while fetching clinic history
+        if (clinicLoading) {
+          return (
+            <div className="min-h-screen flex items-center justify-center">
+              <div className="text-center">
+                <span className="inline-block w-8 h-8 border-2 border-navy-200 border-t-navy-500 rounded-full animate-spin mb-4" />
+                <p className="text-sm text-gray-500 font-medium">Loading your dashboard...</p>
+              </div>
+            </div>
+          )
+        }
 
-            <div className="relative max-w-5xl mx-auto px-6 py-16">
-              <div className="text-center mb-12">
-                <div className="inline-flex items-center gap-2 bg-gradient-to-r from-teal-50 to-emerald-50 text-teal-700 text-xs font-bold px-4 py-2 rounded-full mb-6 border border-teal-100/60 shadow-sm">
-                  <Sparkles size={13} className="text-teal-500" />
-                  Welcome back, {user.full_name?.split(' ')[0] || 'there'}
+        // Has results (either from auto-load or fresh calculation) → show Dashboard
+        if (results) {
+          return (
+            <Dashboard
+              results={results}
+              onBack={() => setPage('upload')}
+              onAudit={() => setPage('audit')}
+            />
+          )
+        }
+
+        // Empty state — no data yet
+        return (
+          <div className="min-h-screen">
+            <div className="max-w-5xl mx-auto px-6 py-12">
+              {/* Header */}
+              <div className="flex items-center gap-4 mb-10">
+                <div className="w-14 h-14 bg-gradient-to-br from-navy-50 to-navy-100/50 rounded-2xl flex items-center justify-center shadow-card">
+                  <Building size={22} className="text-navy-400" />
                 </div>
-                <h1 className="text-4xl sm:text-5xl font-black text-navy-500 mb-5 tracking-tight leading-[1.1]">
-                  Jawda KPI
-                  <span className="bg-clip-text text-transparent bg-gradient-to-r from-teal-400 to-emerald-400 block sm:inline sm:ml-3">Reporting</span>
-                </h1>
-                <p className="text-gray-500 text-base leading-relaxed max-w-xl mx-auto mb-10">
-                  Upload your clinic data files. Get instant Jawda readiness
-                  assessment with pass/fail per KPI and a prioritised action plan.
-                </p>
+                <div>
+                  <h1 className="text-2xl font-black text-navy-500">{user.facility_name || 'Your Clinic'}</h1>
+                  <p className="text-sm text-gray-500">DOH Jawda KPI Dashboard</p>
+                </div>
+              </div>
 
+              {/* Empty KPI cards — all 8 KPIs showing no data */}
+              <div className="mb-8">
+                <h2 className="text-sm font-bold text-navy-500 mb-4">8 Official DOH KPIs — V2 2026</h2>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                  {[
+                    { id: 'OMC001', title: 'Asthma Medication Ratio', target: '50', dir: 'higher' },
+                    { id: 'OMC002', title: 'Avoidance of Antibiotics', target: '50', dir: 'higher' },
+                    { id: 'OMC003', title: 'Time to See Physician', target: '80', dir: 'higher' },
+                    { id: 'OMC004', title: 'BMI Assessment & Counselling', target: '50', dir: 'higher' },
+                    { id: 'OMC005', title: 'Diabetes HbA1c Control', target: '36', dir: 'higher' },
+                    { id: 'OMC006', title: 'Controlling High BP', target: '50', dir: 'higher' },
+                    { id: 'OMC007', title: 'Opioid Use Risk', target: '10', dir: 'lower' },
+                    { id: 'OMC008', title: 'Kidney Disease Eval (eGFR)', target: '50', dir: 'higher' },
+                  ].map(kpi => (
+                    <div key={kpi.id} className="bg-white rounded-2xl border border-gray-100 shadow-card p-5">
+                      <div className="flex items-start justify-between mb-3">
+                        <span className="text-[10px] font-black text-navy-500 bg-navy-50/60 px-2 py-0.5 rounded">{kpi.id}</span>
+                        <span className="text-[9px] text-gray-400 font-medium">{kpi.dir === 'lower' ? '≤' : '≥'}{kpi.target}%</span>
+                      </div>
+                      <p className="text-xs text-gray-600 font-medium mb-4 line-clamp-2">{kpi.title}</p>
+                      <div className="h-12 flex items-center justify-center">
+                        <span className="text-2xl font-black text-gray-200">—</span>
+                      </div>
+                      <p className="text-[9px] text-gray-400 text-center mt-1">No data yet</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Getting started section */}
+              <div className="bg-gradient-to-r from-navy-500 to-navy-400 rounded-2xl p-8 text-center">
+                <div className="w-16 h-16 bg-white/10 rounded-2xl flex items-center justify-center mx-auto mb-5">
+                  <Upload size={28} className="text-teal-300" />
+                </div>
+                <h2 className="text-xl font-black text-white mb-2">Get Started</h2>
+                <p className="text-navy-200 text-sm leading-relaxed max-w-lg mx-auto mb-6">
+                  Upload your clinic's HIS data export files to calculate Jawda KPIs.
+                  You need at least the <strong className="text-white">KPI Excel file</strong> — Time Data, Visit Details,
+                  and E-Claims are optional but improve accuracy.
+                </p>
                 {canUpload(user) && (
-                  <button
-                    onClick={() => setPage('upload')}
-                    className="bg-gradient-to-r from-navy-500 via-navy-400 to-navy-500 bg-[length:200%_100%] text-white
-                      font-bold text-sm px-8 py-4 rounded-xl shadow-elevated hover:shadow-card-hover hover:bg-right
-                      transition-all duration-300 inline-flex items-center gap-2"
-                  >
-                    Upload & Calculate KPIs <ArrowRight size={16} />
+                  <button onClick={() => setPage('upload')}
+                    className="bg-white text-navy-500 font-bold text-sm px-8 py-3.5 rounded-xl shadow-elevated hover:shadow-card-hover transition-all inline-flex items-center gap-2">
+                    Upload & Calculate <ArrowRight size={16} />
                   </button>
+                )}
+                {!canUpload(user) && (
+                  <p className="text-navy-300 text-xs font-medium">Ask your clinic admin or quality officer to upload data.</p>
                 )}
               </div>
 
-              <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-12">
+              {/* What you'll get */}
+              <div className="mt-8 grid grid-cols-2 lg:grid-cols-4 gap-4">
                 {[
-                  { icon: Target, label: 'Pass / Fail', sub: 'Per-KPI vs DOH target', color: 'text-teal-500', bg: 'from-teal-50 to-emerald-50' },
-                  { icon: ClipboardList, label: 'Action Plan', sub: 'Prioritised fix list', color: 'text-blue-500', bg: 'from-blue-50 to-indigo-50' },
-                  { icon: FileWarning, label: 'Data Gaps', sub: '17-field completeness', color: 'text-amber-500', bg: 'from-amber-50 to-orange-50' },
-                  { icon: BarChart3, label: 'Submission File', sub: 'DOH-ready export', color: 'text-violet-500', bg: 'from-violet-50 to-purple-50' },
+                  { icon: Target, label: 'Pass / Fail', sub: 'Per-KPI vs DOH targets', color: 'text-teal-500', bg: 'from-teal-50 to-emerald-50' },
+                  { icon: ClipboardList, label: 'Action Plan', sub: 'Prioritised fix steps', color: 'text-blue-500', bg: 'from-blue-50 to-indigo-50' },
+                  { icon: FileWarning, label: 'Data Quality', sub: 'Field completeness check', color: 'text-amber-500', bg: 'from-amber-50 to-orange-50' },
+                  { icon: BarChart3, label: 'DOH Export', sub: 'Ready for Jawda portal', color: 'text-violet-500', bg: 'from-violet-50 to-purple-50' },
                 ].map(({ icon: Icon, label, sub, color, bg }) => (
-                  <div key={label} className="bg-white rounded-2xl border border-gray-100 shadow-card hover:shadow-elevated transition-all p-5 group cursor-pointer"
-                    onClick={() => canUpload(user) && setPage('upload')}>
-                    <div className={`w-12 h-12 bg-gradient-to-br ${bg} rounded-xl flex items-center justify-center mb-4 group-hover:scale-105 transition-transform`}>
-                      <Icon size={20} className={color} />
+                  <div key={label} className="bg-white rounded-2xl border border-gray-100 shadow-card p-5">
+                    <div className={`w-10 h-10 bg-gradient-to-br ${bg} rounded-xl flex items-center justify-center mb-3`}>
+                      <Icon size={18} className={color} />
                     </div>
-                    <h3 className="text-sm font-bold text-navy-500 mb-1">{label}</h3>
-                    <p className="text-xs text-gray-500">{sub}</p>
+                    <h3 className="text-xs font-bold text-navy-500 mb-0.5">{label}</h3>
+                    <p className="text-[10px] text-gray-500">{sub}</p>
                   </div>
                 ))}
               </div>
 
-              <div className="flex flex-wrap items-center justify-center gap-4 sm:gap-8 text-xs text-gray-500">
+              {/* Footer badges */}
+              <div className="mt-10 flex flex-wrap items-center justify-center gap-4 sm:gap-8 text-xs text-gray-400">
                 <div className="flex items-center gap-2">
-                  <Shield size={14} className="text-teal-400" />
+                  <Shield size={13} className="text-teal-400" />
                   <span className="font-medium">ADHICS Compliant</span>
                 </div>
                 <div className="hidden sm:block w-px h-4 bg-gray-200" />
                 <div className="flex items-center gap-2">
-                  <Activity size={14} className="text-teal-400" />
+                  <Activity size={13} className="text-teal-400" />
                   <span className="font-medium">DOH V2 2026</span>
                 </div>
                 <div className="hidden sm:block w-px h-4 bg-gray-200" />
                 <div className="flex items-center gap-2">
-                  <Building size={14} className="text-teal-400" />
-                  <span className="font-medium">UAE North Region</span>
+                  <Building size={13} className="text-teal-400" />
+                  <span className="font-medium">UAE North</span>
                 </div>
               </div>
             </div>
@@ -457,7 +534,8 @@ function AppShell() {
 
       case 'upload':
         return canUpload(user)
-          ? <UploadPage onResults={handleResults} facility={user.facility_name} />
+          ? <UploadPage onResults={handleResults} facility={user.facility_name}
+              existingQuarters={clinicHistory?.quarters || []} />
           : <div className="p-10 text-center text-gray-500">You don't have permission to upload data.</div>
 
       case 'audit':
