@@ -76,6 +76,14 @@ def init_db():
             uploaded_at TIMESTAMP DEFAULT NOW()
         );
 
+        -- Add columns to existing uploads table if they don't exist
+        DO $$
+        BEGIN
+            BEGIN ALTER TABLE uploads ADD COLUMN col_mapping JSONB DEFAULT '{}'; EXCEPTION WHEN duplicate_column THEN END;
+            BEGIN ALTER TABLE uploads ADD COLUMN data_quality JSONB DEFAULT '{}'; EXCEPTION WHEN duplicate_column THEN END;
+            BEGIN ALTER TABLE uploads ADD COLUMN calculation_time_ms INTEGER DEFAULT 0; EXCEPTION WHEN duplicate_column THEN END;
+        END $$;
+
         CREATE TABLE IF NOT EXISTS kpi_results (
             id SERIAL PRIMARY KEY,
             upload_id INTEGER REFERENCES uploads(id) ON DELETE CASCADE,
