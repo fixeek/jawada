@@ -75,7 +75,7 @@ export default function ComplianceCalendar({ history, onSelectQuarter }) {
                   {/* Score */}
                   {hasData ? (
                     <div className="text-xs text-gray-600 font-medium mb-1.5">
-                      {meeting}/{calculable} KPIs passing
+                      {meeting}/{8 - (qData?.jawda_summary?.not_applicable || 0)} passing
                     </div>
                   ) : (
                     <div className="text-[10px] text-gray-400 mb-1.5">No data</div>

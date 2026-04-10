@@ -87,17 +87,25 @@ function ReadinessVerdict({ summary, results }) {
   if (!summary) return null
   const { meeting_target, below_target, missing_data, calculable, readiness_pct, verdict } = summary
   const na = summary.not_applicable || 0
-  const naNote = na > 0 ? ` ${na} N/A (no eligible patients).` : ''
+  const applicable = 8 - na
+
+  // Build a concise breakdown: "1 passing · 3 below target · 4 N/A"
+  const parts = []
+  if (meeting_target > 0) parts.push(`${meeting_target} passing`)
+  if (below_target > 0) parts.push(`${below_target} below target`)
+  if (missing_data > 0) parts.push(`${missing_data} insufficient data`)
+  if (na > 0) parts.push(`${na} not applicable`)
+  const breakdown = parts.join(' · ')
 
   const cfg = {
     ready:     { icon: ShieldCheck, color: 'text-emerald-700', bg: 'from-emerald-50 to-green-50/50', border: 'border-emerald-100',
-                 headline: 'Ready for Jawda Submission', sub: `All ${calculable} calculable KPIs meet DOH targets.${naNote}` },
+                 headline: 'Ready for Jawda Submission', sub: `All ${applicable} applicable KPIs meet DOH targets. ${breakdown}` },
     attention: { icon: ShieldAlert, color: 'text-amber-700',   bg: 'from-amber-50 to-orange-50/30',  border: 'border-amber-100',
-                 headline: `${below_target + missing_data} KPI${below_target + missing_data > 1 ? 's' : ''} need attention`,
-                 sub: `${meeting_target} of ${calculable} calculable KPIs meet DOH targets.${missing_data > 0 ? ` ${missing_data} cannot be calculated yet.` : ''}${naNote}` },
+                 headline: `${below_target + missing_data} of 8 KPIs need attention`,
+                 sub: `${meeting_target} of ${applicable} applicable KPIs meet DOH targets. ${breakdown}` },
     not_ready: { icon: ShieldX,     color: 'text-red-600',     bg: 'from-red-50 to-rose-50/30',      border: 'border-red-100',
                  headline: 'Not ready for Jawda submission',
-                 sub: `${missing_data > 0 ? `${missing_data} KPIs cannot be calculated. ` : ''}${below_target > 0 ? `${below_target} below target. ` : ''}Review the action plan below.${naNote}` },
+                 sub: `${breakdown}. Review the action plan below.` },
   }[verdict] || cfg?.attention
 
   const Icon = cfg.icon
@@ -113,9 +121,9 @@ function ReadinessVerdict({ summary, results }) {
           <p className="text-sm text-gray-500 mt-0.5">{cfg.sub}</p>
         </div>
         <div className="text-right hidden sm:block">
-          <div className={`text-4xl font-black ${cfg.color} tracking-tight`}>{calculable > 0 ? `${readiness_pct}%` : '—'}</div>
+          <div className={`text-4xl font-black ${cfg.color} tracking-tight`}>{applicable > 0 ? `${readiness_pct}%` : '—'}</div>
           <div className="text-[10px] text-gray-400 font-bold uppercase tracking-wider mt-0.5">
-            {meeting_target}/{calculable} meeting target
+            {meeting_target} of {applicable} KPIs passing
           </div>
         </div>
       </div>
@@ -929,24 +937,31 @@ export default function Dashboard({ results, onBack, onAudit }) {
                     : 'bg-gray-100 text-gray-500 hover:bg-gray-200 hover:text-navy-500'
                 }`}>
                 {q}
-                {history[q]?.jawda_summary && (
-                  <span className={`ml-1.5 ${
-                    q === activeQ
-                      ? (history[q].jawda_summary.verdict === 'ready' ? 'text-emerald-300' :
-                         history[q].jawda_summary.verdict === 'attention' ? 'text-amber-300' : 'text-red-300')
-                      : (history[q].jawda_summary.verdict === 'ready' ? 'text-emerald-500' :
-                         history[q].jawda_summary.verdict === 'attention' ? 'text-amber-500' : 'text-red-400')
-                  }`}>
-                    {history[q].jawda_summary.meeting_target}/{history[q].jawda_summary.calculable}
-                  </span>
-                )}
+                {history[q]?.jawda_summary && (() => {
+                  const s = history[q].jawda_summary
+                  const na = s.not_applicable || 0
+                  const isActive = q === activeQ
+                  return (
+                    <span className={`ml-1.5 ${
+                      isActive
+                        ? (s.verdict === 'ready' ? 'text-emerald-300' : s.verdict === 'attention' ? 'text-amber-300' : 'text-red-300')
+                        : (s.verdict === 'ready' ? 'text-emerald-500' : s.verdict === 'attention' ? 'text-amber-500' : 'text-red-400')
+                    }`}>
+                      {s.meeting_target}/{8 - na}
+                    </span>
+                  )
+                })()}
               </button>
             ))}
-            {prevData && (
-              <span className="text-[10px] text-gray-400 ml-auto">
-                vs {prevQ}: {prevData.jawda_summary?.meeting_target || 0}/{prevData.jawda_summary?.calculable || 0} meeting target
-              </span>
-            )}
+            {prevData && (() => {
+              const ps = prevData.jawda_summary || {}
+              const pna = ps.not_applicable || 0
+              return (
+                <span className="text-[10px] text-gray-400 ml-auto">
+                  vs {prevQ}: {ps.meeting_target || 0}/{8 - pna} passing
+                </span>
+              )
+            })()}
           </div>
         )}
 
