@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import axios from 'axios'
 import { ArrowLeft, Target, Users, TrendingUp, TrendingDown, Minus, Info,
          CheckCircle, AlertTriangle, XCircle, SlidersHorizontal, Calculator,
-         ClipboardList } from 'lucide-react'
+         ClipboardList, BarChart3, Download } from 'lucide-react'
 
 const BASE = import.meta.env.VITE_API_URL || ''
 
@@ -131,13 +131,18 @@ export default function KPIDetailPage({ kpiId, onBack }) {
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
   const [selectedQ, setSelectedQ] = useState(null)
+  const [benchmark, setBenchmark] = useState(null)
 
   useEffect(() => {
     axios.get(`${BASE}/api/clinic/dashboard`)
       .then(res => setData(res.data))
       .catch(() => setData(null))
       .finally(() => setLoading(false))
-  }, [])
+    // Fetch benchmark data
+    axios.get(`${BASE}/api/clinic/benchmark/${kpiId}`)
+      .then(res => setBenchmark(res.data))
+      .catch(() => setBenchmark(null))
+  }, [kpiId])
 
   if (loading) {
     return (
@@ -348,6 +353,43 @@ export default function KPIDetailPage({ kpiId, onBack }) {
               </div>
             )}
 
+            {/* Benchmarking */}
+            {benchmark?.available && (
+              <div className="bg-white rounded-2xl border border-gray-100 shadow-card p-6">
+                <h3 className="text-sm font-bold text-navy-500 mb-4 flex items-center gap-2">
+                  <BarChart3 size={14} className="text-indigo-500" /> Clinic Benchmarking
+                </h3>
+                <div className="grid grid-cols-4 gap-4 mb-4">
+                  <div className="bg-indigo-50 rounded-xl p-3 text-center">
+                    <div className="text-xl font-black text-indigo-600">#{benchmark.rank}</div>
+                    <div className="text-[9px] text-gray-500 font-bold uppercase">Rank</div>
+                  </div>
+                  <div className="bg-indigo-50 rounded-xl p-3 text-center">
+                    <div className="text-xl font-black text-indigo-600">{benchmark.percentile}%</div>
+                    <div className="text-[9px] text-gray-500 font-bold uppercase">Percentile</div>
+                  </div>
+                  <div className="bg-gray-50 rounded-xl p-3 text-center">
+                    <div className="text-xl font-black text-navy-500">{benchmark.average}%</div>
+                    <div className="text-[9px] text-gray-500 font-bold uppercase">Avg All Clinics</div>
+                  </div>
+                  <div className="bg-gray-50 rounded-xl p-3 text-center">
+                    <div className="text-xl font-black text-navy-500">{benchmark.total_clinics}</div>
+                    <div className="text-[9px] text-gray-500 font-bold uppercase">Clinics</div>
+                  </div>
+                </div>
+                <div className="h-3 bg-gray-100 rounded-full overflow-hidden relative">
+                  <div className="absolute h-full bg-gradient-to-r from-red-400 via-amber-400 to-emerald-400 rounded-full" style={{ width: '100%', opacity: 0.3 }} />
+                  <div className="absolute h-full w-1 bg-navy-500 rounded-full" style={{ left: `${benchmark.your_percentage}%` }} title={`You: ${benchmark.your_percentage}%`} />
+                  <div className="absolute h-full w-0.5 bg-gray-400" style={{ left: `${benchmark.average}%` }} title={`Avg: ${benchmark.average}%`} />
+                </div>
+                <div className="flex justify-between text-[8px] text-gray-400 mt-1">
+                  <span>Min: {benchmark.min}%</span>
+                  <span>Your clinic: {benchmark.your_percentage}%</span>
+                  <span>Max: {benchmark.max}%</span>
+                </div>
+              </div>
+            )}
+
             {/* Missing fields */}
             {kpi.missing_fields?.length > 0 && (
               <div className="bg-white rounded-2xl border border-gray-100 shadow-card p-6">
@@ -374,6 +416,55 @@ export default function KPIDetailPage({ kpiId, onBack }) {
                       <span>{n}</span>
                     </div>
                   ))}
+                </div>
+              </div>
+            )}
+
+            {/* Patient Cohort Export */}
+            {kpi.patient_details?.length > 0 && (
+              <div className="bg-white rounded-2xl border border-gray-100 shadow-card p-6">
+                <div className="flex items-center justify-between mb-3">
+                  <h3 className="text-sm font-bold text-navy-500">Patient Cohort</h3>
+                  <button onClick={() => {
+                    const headers = Object.keys(kpi.patient_details[0])
+                    const csv = [headers.join(','), ...kpi.patient_details.map(r => headers.map(h => `"${r[h] ?? ''}"`).join(','))].join('\n')
+                    const a = document.createElement('a')
+                    a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }))
+                    a.download = `${kpiId}-patients-${activeQ?.replace(/\s/g, '-')}.csv`
+                    a.click()
+                  }}
+                    className="flex items-center gap-1.5 text-xs font-bold text-teal-600 bg-teal-50 px-3 py-1.5 rounded-lg border border-teal-100 hover:bg-teal-100 transition-colors">
+                    <Download size={12} /> Export CSV
+                  </button>
+                </div>
+                <p className="text-[10px] text-gray-500 mb-3">
+                  {kpi.patient_details.length} patient{kpi.patient_details.length !== 1 ? 's' : ''} in this KPI's calculation.
+                  Export to identify patients who need intervention.
+                </p>
+                <div className="overflow-x-auto rounded-xl border border-gray-100">
+                  <table className="w-full text-[10px]">
+                    <thead>
+                      <tr className="bg-gray-50">
+                        {Object.keys(kpi.patient_details[0]).map(h => (
+                          <th key={h} className="px-3 py-2 text-left text-navy-400 font-bold uppercase tracking-wider">{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {kpi.patient_details.slice(0, 20).map((row, i) => (
+                        <tr key={i} className={i % 2 === 0 ? 'bg-white' : 'bg-gray-50/50'}>
+                          {Object.values(row).map((v, j) => (
+                            <td key={j} className="px-3 py-1.5 text-gray-700">{String(v)}</td>
+                          ))}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  {kpi.patient_details.length > 20 && (
+                    <div className="px-3 py-2 bg-gray-50 text-[9px] text-gray-400 text-center">
+                      Showing 20 of {kpi.patient_details.length} · Export CSV for full list
+                    </div>
+                  )}
                 </div>
               </div>
             )}

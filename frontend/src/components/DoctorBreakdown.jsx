@@ -1,7 +1,10 @@
 import { Users, User } from 'lucide-react'
 
 export default function DoctorBreakdown({ data }) {
-  if (!data?.available || !data?.doctors?.length) return null
+  if (!data?.available || !data?.doctors?.length) {
+    if (data === undefined) return null // No data at all
+    return null
+  }
 
   const maxPatients = Math.max(...data.doctors.map(d => d.patient_count))
 

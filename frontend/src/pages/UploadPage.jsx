@@ -85,7 +85,7 @@ function generateQuarterOptions(existingQuarters) {
 
 /* ── Main Upload Page ───────────────────────────────────────────────── */
 
-export default function UploadPage({ onResults, facility: facilityProp, existingQuarters = [] }) {
+export default function UploadPage({ onResults, facility: facilityProp, existingQuarters = [], savedColMapping = null }) {
   const [mode, setMode] = useState(null) // null = picker, 'current' | 'historical'
   const [selectedQuarter, setSelectedQuarter] = useState('')
   const [files, setFiles] = useState({ kpiData: null, visitDetails: null, timeData: null, eclaims: null })
@@ -127,7 +127,11 @@ export default function UploadPage({ onResults, facility: facilityProp, existing
         eclaims: files.eclaims,
       })
       setPreview(result)
-      if (result.col_mapping) setColMapping(result.col_mapping)
+      // Merge: saved clinic mapping as base, auto-detected overwrites
+      if (result.col_mapping) {
+        const merged = { ...(savedColMapping || {}), ...result.col_mapping }
+        setColMapping(merged)
+      }
       // For historical upload, use the selected quarter; for current, auto-detect
       if (mode === 'historical' && selectedQuarter) {
         setQuarter(selectedQuarter)

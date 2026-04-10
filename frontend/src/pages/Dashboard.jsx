@@ -14,6 +14,7 @@ import ComplianceCalendar from '../components/ComplianceCalendar'
 import DoctorBreakdown from '../components/DoctorBreakdown'
 import DataQualityTrend from '../components/DataQualityTrend'
 import SmartRecommendations from '../components/SmartRecommendations'
+import PredictionBanner from '../components/PredictionBanner'
 
 const SUBMIT_BASE = import.meta.env.VITE_API_URL || ''
 
@@ -993,6 +994,9 @@ export default function Dashboard({ results, onBack, onAudit }) {
 
         {/* Readiness Verdict */}
         <ReadinessVerdict summary={summary} results={results} />
+
+        {/* Predictive Alerts */}
+        {isLatest && <PredictionBanner predictions={results.predictions} />}
 
         {/* Submission Tracker */}
         <SubmissionTracker

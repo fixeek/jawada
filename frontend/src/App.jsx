@@ -423,7 +423,8 @@ function AppShell() {
       case 'upload':
         return canUpload(user)
           ? <UploadPage onResults={handleResults} facility={user.facility_name}
-              existingQuarters={clinicHistory?.quarters || []} />
+              existingQuarters={clinicHistory?.quarters || []}
+              savedColMapping={clinicHistory?.saved_col_mapping || null} />
           : <div className="p-10 text-center text-gray-500">You don't have permission to upload data.</div>
 
       case 'kpi-explorer':

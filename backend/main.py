@@ -1119,12 +1119,40 @@ def clinic_dashboard(user: dict = Depends(get_current_user)):
             "history": history,
         }
 
+    # Generate recommendations from stored data
+    recs = []
+    preds = []
+    if latest and latest.get("kpis"):
+        try:
+            from recommendations import generate_recommendations, generate_predictions
+            recs = generate_recommendations(latest["kpis"], latest.get("jawda_summary", {}))
+            if len(quarters) > 1:
+                preds = generate_predictions(history)
+        except Exception as e:
+            log.error(f"Dashboard recommendations failed: {e}")
+    if latest:
+        latest["recommendations"] = recs
+        latest["predictions"] = preds
+
+    # Get saved column mapping default for this clinic
+    saved_col_mapping = None
+    if facility_id and USE_DB:
+        try:
+            with db_cursor(dict_cursor=True) as (conn, cur):
+                cur.execute("SELECT col_mapping_default FROM facilities WHERE id = %s", (facility_id,))
+                row = cur.fetchone()
+                if row and row.get("col_mapping_default"):
+                    saved_col_mapping = row["col_mapping_default"]
+        except Exception as e:
+            log.error(f"Failed to load saved col mapping: {e}")
+
     return {
         "has_data": len(quarters) > 0,
         "facility_name": facility_name,
         "quarters": quarters,
         "history": history,
         "latest": latest,
+        "saved_col_mapping": saved_col_mapping,
     }
 
 
