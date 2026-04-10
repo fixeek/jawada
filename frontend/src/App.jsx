@@ -67,9 +67,14 @@ function Sidebar({ active, onNavigate, collapsed, onCollapse, user, onLogout }) 
           <span className="text-white text-sm font-black">J</span>
         </div>
         {!collapsed && (
-          <div className="overflow-hidden">
+          <div className="overflow-hidden flex-1">
             <div className="text-white font-bold text-sm tracking-tight">Jawda KPI</div>
             <div className="text-navy-300 text-[9px] font-medium tracking-wide uppercase">by TriZodiac</div>
+          </div>
+        )}
+        {!isSuperAdmin(user) && (
+          <div className="flex-shrink-0 [&_button]:text-navy-300 [&_button:hover]:text-white [&_button:hover]:bg-white/10">
+            <NotificationBell />
           </div>
         )}
       </div>
@@ -184,9 +189,16 @@ function MobileNav({ active, onNavigate, user, onLogout }) {
           </div>
           <span className="text-white font-bold text-sm">Jawda KPI</span>
         </div>
-        <button onClick={() => setOpen(!open)} className="text-white p-1">
-          {open ? <X size={22} /> : <Menu size={22} />}
-        </button>
+        <div className="flex items-center gap-2">
+          {!isSuperAdmin(user) && (
+            <div className="[&_button]:text-navy-300 [&_button:hover]:text-white">
+              <NotificationBell />
+            </div>
+          )}
+          <button onClick={() => setOpen(!open)} className="text-white p-1">
+            {open ? <X size={22} /> : <Menu size={22} />}
+          </button>
+        </div>
       </div>
       {open && (
         <div className="lg:hidden bg-navy-500 px-4 pb-3 space-y-1 sticky top-[52px] z-20 border-b border-white/10">
@@ -450,24 +462,14 @@ function AppShell() {
           user={user}
           onLogout={logout}
         />
-        <main className="flex-1 min-h-screen overflow-auto relative">
-          {!isSuperAdmin(user) && (
-            <div className="absolute top-4 right-6 z-10">
-              <NotificationBell />
-            </div>
-          )}
+        <main className="flex-1 min-h-screen overflow-auto">
           {renderPage()}
         </main>
       </div>
 
       <div className="lg:hidden">
         <MobileNav active={page} onNavigate={navigate} user={user} onLogout={logout} />
-        <main className="min-h-screen relative">
-          {!isSuperAdmin(user) && (
-            <div className="absolute top-4 right-4 z-10">
-              <NotificationBell />
-            </div>
-          )}
+        <main className="min-h-screen">
           {renderPage()}
         </main>
       </div>
