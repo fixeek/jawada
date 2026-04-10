@@ -15,7 +15,8 @@ log = logging.getLogger("jawda")
 
 from fastapi import FastAPI, UploadFile, File, HTTPException, Form, Depends, Header, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, FileResponse
+from fastapi.responses import JSONResponse, FileResponse, Response
+import io
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 import pandas as pd
@@ -287,6 +288,74 @@ def _filter_by_quarter(df: pd.DataFrame, date_col: str, quarter: str) -> pd.Data
         else:
             mask.append(dt.year == year and month_start <= dt.month <= month_end)
     return df[mask].reset_index(drop=True)
+
+
+@app.get("/api/template/download")
+def download_template():
+    """Download a blank Excel template showing expected column headers."""
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, PatternFill, Alignment
+    from engine.kpi_engine import FIELD_DEFINITIONS
+
+    wb = Workbook()
+    wb.remove(wb.active)
+
+    header_font = Font(bold=True, color="FFFFFF", size=10)
+    header_fill = PatternFill(start_color="0D2137", end_color="0D2137", fill_type="solid")
+    desc_font = Font(italic=True, color="888888", size=9)
+
+    sheets_config = {
+        "KPI Data": ["patient_id", "file_no", "date_of_service", "date_of_birth", "age", "gender",
+                      "bmi", "bp_reading", "hba1c", "diabetes_flag", "htn_flag", "egfr", "uacr",
+                      "opioid", "pregnancy", "management_plan"],
+        "Visit Details": ["patient_id", "date_of_service", "icd_code", "icd_secondary",
+                          "cpt_code", "drug_name", "drug_class", "days_supplied", "pregnancy"],
+        "Time Data": ["file_no", "date_of_service", "registration_ts", "consult_ts", "wait_minutes"],
+        "E-Claims": ["patient_id", "date_of_service", "age", "date_of_birth", "gender", "visit_type"],
+    }
+
+    examples = {
+        "patient_id": "12345", "file_no": "67890", "date_of_service": "15/07/2025",
+        "date_of_birth": "20/05/1980", "age": "45", "gender": "F",
+        "bmi": "27.5", "bp_reading": "130/80", "hba1c": "7.2",
+        "diabetes_flag": "YES", "htn_flag": "NO", "egfr": "85",
+        "uacr": "25", "opioid": "NO", "pregnancy": "NO",
+        "management_plan": "Documented", "icd_code": "E11.9",
+        "icd_secondary": "I10", "cpt_code": "99213", "drug_name": "Metformin",
+        "drug_class": "Antidiabetic", "days_supplied": "30",
+        "registration_ts": "15/07/2025 08:30", "consult_ts": "15/07/2025 09:15",
+        "wait_minutes": "45", "visit_type": "O",
+    }
+
+    for sheet_name, fields in sheets_config.items():
+        ws = wb.create_sheet(sheet_name)
+        for col_idx, field_key in enumerate(fields, 1):
+            fd = FIELD_DEFINITIONS.get(field_key, {})
+            # Row 1: column header (preferred alias)
+            cell = ws.cell(row=1, column=col_idx, value=fd.get("aliases", [field_key])[0] if fd.get("aliases") else field_key)
+            cell.font = header_font
+            cell.fill = header_fill
+            cell.alignment = Alignment(horizontal="center")
+            # Row 2: description
+            ws.cell(row=2, column=col_idx, value=fd.get("label", field_key)).font = desc_font
+            # Row 3: required/optional
+            ws.cell(row=3, column=col_idx, value="REQUIRED" if fd.get("required") else "Optional").font = desc_font
+            # Row 4: affected KPIs
+            ws.cell(row=4, column=col_idx, value=", ".join(fd.get("kpis", []))).font = desc_font
+            # Row 5: example value
+            ws.cell(row=5, column=col_idx, value=examples.get(field_key, ""))
+            # Column width
+            ws.column_dimensions[ws.cell(row=1, column=col_idx).column_letter].width = 18
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+
+    return Response(
+        content=buf.getvalue(),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": 'attachment; filename="Jawda-KPI-Data-Template.xlsx"'},
+    )
 
 
 @app.get("/api")
@@ -1413,6 +1482,29 @@ async def validate_multi(
     total_rows = sum(r.get("rows", 0) for r in results.values() if r.get("valid"))
     prev_total_rows = sum(r.get("rows", 0) for r in prev_results.values() if r.get("valid"))
 
+    # Build column mapping across all uploaded files for the mapping review UI
+    from engine.kpi_engine import FIELD_DEFINITIONS
+    combined_mapping = {}
+    all_available_columns = []
+    try:
+        for slot, path in file_paths.items():
+            df_slot = normalise_df(load_file(path))
+            slot_cols = list(df_slot.columns)
+            all_available_columns.extend(slot_cols)
+            slot_map = map_columns(df_slot)
+            for field_key, detected_col in slot_map.items():
+                if detected_col and field_key not in combined_mapping:
+                    combined_mapping[field_key] = detected_col
+        all_available_columns = sorted(set(all_available_columns))
+    except Exception as e:
+        log.error(f"Column mapping build failed: {e}")
+
+    # Simplify field definitions for frontend
+    field_defs_simple = {
+        k: {"label": v["label"], "required": v["required"], "file": v["file"], "kpis": v["kpis"]}
+        for k, v in FIELD_DEFINITIONS.items()
+    }
+
     return {
         "valid": True,
         "session_id": session_id,
@@ -1427,6 +1519,9 @@ async def validate_multi(
         "warnings": warnings,
         "id_warnings": id_warnings,
         "data_quality_warnings": data_quality_warnings,
+        "col_mapping": combined_mapping,
+        "available_columns": all_available_columns,
+        "field_definitions": field_defs_simple,
     }
 
 
@@ -1436,10 +1531,12 @@ async def calculate_multi(
     session_id: str = Form(...),
     quarter: str = Form(default=""),
     facility_name: str = Form(default="Clinic"),
+    col_mapping: Optional[str] = Form(default=None),
     user: dict = Depends(get_current_user),
 ):
     """Run KPI calculations on previously validated multi-file session.
-    Merges files by patient ID where possible."""
+    Merges files by patient ID where possible.
+    col_mapping: optional JSON string of user-corrected column mapping."""
 
     # Use facility from logged-in user when available (multi-tenancy)
     if user.get("facility_name"):
@@ -1447,6 +1544,15 @@ async def calculate_multi(
 
     client_ip = _get_client_ip(request)
     user_agent = request.headers.get("user-agent", "")
+
+    # Parse user-provided column mapping override
+    user_col_mapping = None
+    if col_mapping:
+        try:
+            user_col_mapping = json.loads(col_mapping)
+            log.info(f"Using user-provided column mapping: {len(user_col_mapping)} fields")
+        except Exception as e:
+            log.warning(f"Invalid col_mapping JSON: {e}")
 
     if session_id not in validated_files:
         raise HTTPException(400, "Session not found or expired. Please upload again.")
@@ -1697,14 +1803,14 @@ async def calculate_multi(
             df_filtered = _filter_by_quarter(df_merged, date_col, quarter)
             if len(df_filtered) == 0:
                 raise HTTPException(400, f"No records found for {quarter}.")
-            results = run_all_kpis(df_filtered, quarter)
+            results = run_all_kpis(df_filtered, quarter, col_mapping_override=user_col_mapping)
         else:
             if not quarter_label and date_col:
                 quarters = _detect_quarters(df_merged, date_col)
                 quarter_label = quarters[0]["quarter"] if quarters else "Unknown"
             elif not quarter_label:
                 quarter_label = "Unknown"
-            results = run_all_kpis(df_merged, quarter_label)
+            results = run_all_kpis(df_merged, quarter_label, col_mapping_override=user_col_mapping)
 
         # ── OMC003: ALWAYS run on Time Data independently ──
         # Time Data is the source of truth for wait times. Each row = 1 visit.
@@ -1759,6 +1865,14 @@ async def calculate_multi(
         results["facility"] = facility_name
         results["files_used"] = list(paths.keys())
         results["merge_diagnostics"] = merge_diagnostics
+
+        # If user provided custom column mapping, force-save as clinic default
+        if user_col_mapping and user.get("facility_id") and USE_DB:
+            try:
+                save_facility_col_mapping(user["facility_id"], user_col_mapping, force=True)
+                log.info("Saved user-confirmed column mapping as clinic default")
+            except Exception as e:
+                log.error(f"Failed to save user column mapping: {e}")
 
         # Save current quarter to history
         _save_to_history(facility_name, results.get("quarter", "Unknown"), results)

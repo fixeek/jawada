@@ -307,22 +307,23 @@ def get_or_create_facility(name: str) -> int:
     return facility_id
 
 
-def save_facility_col_mapping(facility_id: int, col_mapping: dict):
-    """Auto-save detected column mapping as the facility's default.
-    Only writes if no default exists yet (first upload) — never silently
-    overwrites an existing mapping. This is the clinic's 'data profile'."""
+def save_facility_col_mapping(facility_id: int, col_mapping: dict, force: bool = False):
+    """Save column mapping as the facility's default.
+    force=False: only writes if no default exists (first upload auto-save).
+    force=True: overwrites existing (user confirmed mapping via UI)."""
     if not col_mapping:
         return
-    conn = get_conn()
-    cur = conn.cursor()
-    cur.execute("""
-        UPDATE facilities
-        SET col_mapping_default = %s
-        WHERE id = %s AND (col_mapping_default IS NULL OR col_mapping_default = '{}'::jsonb)
-    """, (json.dumps(col_mapping), facility_id))
-    conn.commit()
-    cur.close()
-    conn.close()
+    with db_cursor() as (conn, cur):
+        if force:
+            cur.execute("""
+                UPDATE facilities SET col_mapping_default = %s WHERE id = %s
+            """, (json.dumps(col_mapping), facility_id))
+        else:
+            cur.execute("""
+                UPDATE facilities SET col_mapping_default = %s
+                WHERE id = %s AND (col_mapping_default IS NULL OR col_mapping_default = '{}'::jsonb)
+            """, (json.dumps(col_mapping), facility_id))
+        conn.commit()
 
 
 def save_results(facility_name: str, results: dict) -> int:

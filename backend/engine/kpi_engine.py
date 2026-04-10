@@ -457,6 +457,38 @@ def find_col(df: pd.DataFrame, candidates: List[str]) -> Optional[str]:
             return cols_lower[c.lower()]
     return None
 
+# ── Field Definitions — single source of truth for column mapping ─────────
+
+FIELD_DEFINITIONS = {
+    "patient_id":      {"label": "Patient ID / MRN", "required": True, "file": "KPI Data", "kpis": ["ALL"], "aliases": ["mrn","mrn_no","mrn_no.","patient_id","file_no","file_no.","file no","patient id","claim_id","claimid","sno","sno."]},
+    "file_no":         {"label": "File Number", "required": False, "file": "KPI Data", "kpis": ["OMC003"], "aliases": ["file_no","file_no.","file no"]},
+    "date_of_service": {"label": "Date of Service", "required": True, "file": "KPI Data", "kpis": ["ALL"], "aliases": ["date_of_service","date of service","dos","visit_date","visit date","service_date","claim_date"]},
+    "date_of_birth":   {"label": "Date of Birth", "required": False, "file": "KPI Data", "kpis": ["OMC004","OMC005","OMC006"], "aliases": ["date_of_birth","dob","date of birth","birthdate"]},
+    "age":             {"label": "Age", "required": False, "file": "KPI Data", "kpis": ["OMC001-008"], "aliases": ["age"]},
+    "gender":          {"label": "Gender", "required": False, "file": "KPI Data", "kpis": [], "aliases": ["gender","sex"]},
+    "icd_code":        {"label": "Primary Diagnosis (ICD-10)", "required": True, "file": "Visit Details", "kpis": ["OMC001","OMC002","OMC005","OMC006"], "aliases": ["primary_diagnosis","primary diagnosis","primarydx","icd_code","icd code","icd_10","icd","diagnosis","diagnosis_code"]},
+    "icd_secondary":   {"label": "Secondary Diagnosis", "required": False, "file": "Visit Details", "kpis": ["OMC001","OMC002","OMC005","OMC006"], "aliases": ["secondary_diagnosis","secondary diagnosis","secondary_dx","secondarydx"]},
+    "bmi":             {"label": "BMI", "required": False, "file": "KPI Data", "kpis": ["OMC004"], "aliases": ["bmi","body_mass_index","bmi_counsel_flag"]},
+    "bp_reading":      {"label": "Blood Pressure", "required": False, "file": "KPI Data", "kpis": ["OMC006"], "aliases": ["bp_reading","bp reading","blood_pressure","bp_value","bp value","bp"]},
+    "hba1c":           {"label": "HbA1c Result", "required": False, "file": "KPI Data", "kpis": ["OMC005"], "aliases": ["hba1c","hba1c_result","hba1c_value","a1c","hemoglobin_a1c"]},
+    "egfr":            {"label": "eGFR Value", "required": False, "file": "KPI Data", "kpis": ["OMC008"], "aliases": ["egfr_status","egfr status","egfr","egfr_value","egfr_result","gfr","egfr_report_status"]},
+    "uacr":            {"label": "uACR Value", "required": False, "file": "KPI Data", "kpis": ["OMC008"], "aliases": ["uacr","uacr_value","uacr_result","albumin_creatinine"]},
+    "opioid":          {"label": "Opioid Prescription Flag", "required": False, "file": "KPI Data", "kpis": ["OMC007"], "aliases": ["opioid_prescription","opioid","opiod_prescription_yes_no","opiod_prescription_yes/no","opiod prescription yes_no","opiod_prescription"]},
+    "drug_name":       {"label": "Drug / Medication Name", "required": False, "file": "Visit Details", "kpis": ["OMC001","OMC002","OMC007"], "aliases": ["drug_name","drugs","drug","medication","medicine","drug name"]},
+    "drug_class":      {"label": "Drug Class", "required": False, "file": "Visit Details", "kpis": ["OMC007"], "aliases": ["drug_class","drug class","medication_class"]},
+    "days_supplied":   {"label": "Days Supplied", "required": False, "file": "Visit Details", "kpis": ["OMC007"], "aliases": ["days_supplied","days supplied","days_supply","supply_days"]},
+    "pregnancy":       {"label": "Pregnancy Flag", "required": False, "file": "Visit Details", "kpis": ["OMC004","OMC006"], "aliases": ["pregnancy","pregnant","pregnancy_flag"]},
+    "diabetes_flag":   {"label": "Diabetes Flag", "required": False, "file": "KPI Data", "kpis": ["OMC005"], "aliases": ["diabetes","diabetic","diabetes_flag"]},
+    "htn_flag":        {"label": "Hypertension Flag", "required": False, "file": "KPI Data", "kpis": ["OMC006"], "aliases": ["hypertensive","hypertension","htn_flag","htn"]},
+    "management_plan": {"label": "Management Plan", "required": False, "file": "KPI Data", "kpis": ["OMC004"], "aliases": ["management_plan","mgmt_plan","plan_documented","management plan"]},
+    "registration_ts": {"label": "Registration Time", "required": False, "file": "Time Data", "kpis": ["OMC003"], "aliases": ["registration_time","reg_time","registration_timestamp","arrival_time","registration_date_time","registration date_time","registration_date"]},
+    "consult_ts":      {"label": "Doctor Check-in Time", "required": False, "file": "Time Data", "kpis": ["OMC003"], "aliases": ["consult_time","consult_start","physician_time","doctor_time","doctor_encountercheck_in_date_time","doctor_encountercheck_in_date","doctor_encounter_check_in__date"]},
+    "wait_minutes":    {"label": "Wait Time (minutes)", "required": False, "file": "Time Data", "kpis": ["OMC003"], "aliases": ["duration_from_reception_to_doctor_checkin","duration from reception to doctor checkin","duration_from_reception_to_doctor_checkout","wait_time","wait_minutes"]},
+    "visit_type":      {"label": "Visit Type (I/O)", "required": False, "file": "E-Claims", "kpis": [], "aliases": ["visit_type","visit type","i_o","ipop"]},
+    "cpt_code":        {"label": "CPT Code", "required": False, "file": "Visit Details", "kpis": [], "aliases": ["cpt_code","cpt code","cpt","procedure_code","procedure code","enm","e&m","procedures"]},
+}
+
+
 def map_columns(df: pd.DataFrame) -> Dict[str, Optional[str]]:
     """Map standard field names to actual dataframe columns.
     Aliases include real column names from clinic HIS exports (Visit Details CSV,
@@ -1518,12 +1550,13 @@ def data_quality_report(df: pd.DataFrame, col_map: dict) -> dict:
 # MAIN ENGINE — run all KPIs
 # ─────────────────────────────────────────────────────────────────────────────
 
-def run_all_kpis(df: pd.DataFrame, quarter: str = None) -> dict:
+def run_all_kpis(df: pd.DataFrame, quarter: str = None, col_mapping_override: dict = None) -> dict:
     """
     Main entry point. Takes a DataFrame, runs all 8 KPIs, returns results dict.
+    col_mapping_override: if provided, use this mapping instead of auto-detection.
     """
     df = normalise_df(df)
-    col_map = map_columns(df)
+    col_map = col_mapping_override if col_mapping_override else map_columns(df)
 
     results = {
         "quarter":      quarter or "Unknown",

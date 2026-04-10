@@ -22,11 +22,12 @@ export const api = {
   },
 
   // Multi-file calculate
-  async calculateMulti(sessionId, quarter, facilityName) {
+  async calculateMulti(sessionId, quarter, facilityName, colMapping = null) {
     const form = new FormData()
     form.append('session_id', sessionId)
     form.append('quarter', quarter)
     form.append('facility_name', facilityName)
+    if (colMapping) form.append('col_mapping', JSON.stringify(colMapping))
     const { data } = await axios.post(`${BASE}/api/calculate-multi`, form, {
       headers: { 'Content-Type': 'multipart/form-data' }
     })

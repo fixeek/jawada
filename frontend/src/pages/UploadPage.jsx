@@ -4,6 +4,7 @@ import { Upload, FileText, ChevronRight, AlertCircle, Shield, Activity,
          Clock, FileSpreadsheet, Receipt, History, CalendarPlus, RotateCcw } from 'lucide-react'
 import { api } from '../utils/api'
 import { getErrorMessage } from '../utils/errors'
+import ColumnMappingReview from '../components/ColumnMappingReview'
 
 /* ── File Slot Component ─────────────────────────────────────────────── */
 
@@ -95,6 +96,7 @@ export default function UploadPage({ onResults, facility: facilityProp, existing
   const [preview, setPreview] = useState(null)
   const [facility, setFacility] = useState(facilityProp || '')
   const [quarter, setQuarter] = useState('')
+  const [colMapping, setColMapping] = useState(null)
   const [calculating, setCalculating] = useState(false)
 
   function setFile(slot, file) { setFiles(prev => ({ ...prev, [slot]: file })) }
@@ -125,6 +127,7 @@ export default function UploadPage({ onResults, facility: facilityProp, existing
         eclaims: files.eclaims,
       })
       setPreview(result)
+      if (result.col_mapping) setColMapping(result.col_mapping)
       // For historical upload, use the selected quarter; for current, auto-detect
       if (mode === 'historical' && selectedQuarter) {
         setQuarter(selectedQuarter)
@@ -143,7 +146,7 @@ export default function UploadPage({ onResults, facility: facilityProp, existing
     if (!facility.trim()) { setError('Please enter a facility name.'); return }
     setCalculating(true); setError(null)
     try {
-      const result = await api.calculateMulti(preview.session_id, quarter, facility)
+      const result = await api.calculateMulti(preview.session_id, quarter, facility, colMapping)
       onResults(result.results)
     } catch (err) {
       setError(getErrorMessage(err, 'Calculation failed. Please try again.'))
@@ -281,6 +284,16 @@ export default function UploadPage({ onResults, facility: facilityProp, existing
                 </div>
               ))}
             </div>
+          )}
+
+          {/* Column Mapping Review */}
+          {preview.col_mapping && (
+            <ColumnMappingReview
+              colMapping={colMapping || preview.col_mapping}
+              availableColumns={preview.available_columns || []}
+              fieldDefinitions={preview.field_definitions || {}}
+              onChange={setColMapping}
+            />
           )}
 
           {/* Configure & Calculate */}
@@ -435,7 +448,11 @@ export default function UploadPage({ onResults, facility: facilityProp, existing
             </button>
 
             <p className="text-[10px] text-gray-400 text-center mt-3 font-medium">
-              Data stays in UAE (ADHICS compliant) · CSV and Excel accepted
+              Data stays in UAE (ADHICS compliant) · CSV and Excel accepted ·{' '}
+                <a href={`${import.meta.env.VITE_API_URL ?? ''}/api/template/download`}
+                  className="text-teal-500 hover:text-teal-600 font-bold underline">
+                  Download blank template
+                </a>
             </p>
           </div>
         </div>
