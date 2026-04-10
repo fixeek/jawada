@@ -1,0 +1,119 @@
+import { User as UserIcon, Target, Shield, Activity, Settings } from 'lucide-react'
+import { isSuperAdmin, ROLE_LABELS } from '../utils/auth'
+
+export default function SettingsPage({ user }) {
+  const isSA = isSuperAdmin(user)
+  return (
+    <div className="max-w-4xl mx-auto px-6 py-10">
+      <div className="flex items-center gap-4 mb-8">
+        <div className="w-14 h-14 bg-gradient-to-br from-gray-50 to-gray-100 rounded-2xl flex items-center justify-center shadow-card">
+          <Settings size={24} className="text-gray-500" />
+        </div>
+        <div>
+          <h1 className="text-2xl font-black text-navy-500 tracking-tight">Settings</h1>
+          <p className="text-sm text-gray-500">{isSA ? 'Platform configuration and your account' : 'Your account and clinic preferences'}</p>
+        </div>
+      </div>
+
+      <div className="space-y-6">
+        <div className="bg-white rounded-2xl border border-gray-100 shadow-card p-6">
+          <h3 className="text-sm font-bold text-navy-500 mb-4 flex items-center gap-2">
+            <UserIcon size={14} className="text-blue-500" /> Your Account
+          </h3>
+          <div className="space-y-3 text-sm">
+            <div className="flex justify-between py-2 border-b border-gray-50">
+              <span className="text-gray-500">Name</span>
+              <span className="font-bold text-navy-500">{user?.full_name || '—'}</span>
+            </div>
+            <div className="flex justify-between py-2 border-b border-gray-50">
+              <span className="text-gray-500">Email</span>
+              <span className="font-bold text-navy-500">{user?.email}</span>
+            </div>
+            <div className="flex justify-between py-2 border-b border-gray-50">
+              <span className="text-gray-500">Role</span>
+              <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${
+                isSA ? 'bg-amber-50 text-amber-700' : 'bg-blue-50 text-blue-700'
+              }`}>{ROLE_LABELS[user?.role]}</span>
+            </div>
+            {user?.facility_name && (
+              <div className="flex justify-between py-2">
+                <span className="text-gray-500">Facility</span>
+                <span className="font-bold text-navy-500">{user.facility_name}</span>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {isSA && (
+          <>
+            <div className="bg-white rounded-2xl border border-gray-100 shadow-card p-6">
+              <h3 className="text-sm font-bold text-navy-500 mb-4 flex items-center gap-2">
+                <Target size={14} className="text-teal-500" /> DOH KPI Targets
+              </h3>
+              <p className="text-xs text-gray-500 mb-4">Default target thresholds applied to all clinics. From DOH Jawda Guidance V2 2026.</p>
+              <div className="space-y-2 text-sm">
+                {[
+                  ['OMC001', 'Asthma Medication Ratio', '≥ 50%'],
+                  ['OMC002', 'Avoidance of Antibiotics', '≥ 50%'],
+                  ['OMC003', 'Time to See Physician', '≥ 80%'],
+                  ['OMC004', 'BMI Counselling', '≥ 50%'],
+                  ['OMC005', 'HbA1c ≤ 8.0%', '> 36%'],
+                  ['OMC006', 'BP < 130/80', '≥ 50%'],
+                  ['OMC007', 'Opioid Use Risk', '≤ 10%'],
+                  ['OMC008', 'eGFR + uACR', '≥ 50%'],
+                ].map(([id, name, target]) => (
+                  <div key={id} className="flex items-center justify-between py-2 border-b border-gray-50">
+                    <div className="flex items-center gap-3">
+                      <span className="text-xs font-black text-navy-300">{id}</span>
+                      <span className="text-xs text-gray-600">{name}</span>
+                    </div>
+                    <span className="text-xs font-bold text-teal-700 bg-teal-50 px-2 py-0.5 rounded">{target}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="bg-white rounded-2xl border border-gray-100 shadow-card p-6">
+              <h3 className="text-sm font-bold text-navy-500 mb-4 flex items-center gap-2">
+                <Shield size={14} className="text-emerald-500" /> Security & Compliance
+              </h3>
+              <div className="space-y-3 text-sm">
+                {[
+                  ['Password policy', 'Min 8 characters'],
+                  ['Session expiry', '12 hours'],
+                  ['First login', 'Force password change'],
+                  ['Audit retention', 'Indefinite'],
+                ].map(([label, value], i, arr) => (
+                  <div key={label} className={`flex justify-between py-2 ${i < arr.length - 1 ? 'border-b border-gray-50' : ''}`}>
+                    <span className="text-gray-500">{label}</span>
+                    <span className="font-bold text-navy-500">{value}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </>
+        )}
+
+        <div className="bg-white rounded-2xl border border-gray-100 shadow-card p-6">
+          <h3 className="text-sm font-bold text-navy-500 mb-4 flex items-center gap-2">
+            <Activity size={14} className="text-violet-500" /> Platform Information
+          </h3>
+          <div className="space-y-3 text-sm">
+            {[
+              ['Product', 'Jawda KPI Platform'],
+              ['Developer', 'TriZodiac'],
+              ['DOH Guidance', 'V2 2026'],
+              ['Data Region', 'UAE North (Abu Dhabi)'],
+              ['Compliance', 'ADHICS V2'],
+            ].map(([label, value], i, arr) => (
+              <div key={label} className={`flex justify-between py-2 ${i < arr.length - 1 ? 'border-b border-gray-50' : ''}`}>
+                <span className="text-gray-500">{label}</span>
+                <span className="font-bold text-navy-500">{value}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}

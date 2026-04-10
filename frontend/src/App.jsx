@@ -3,7 +3,8 @@ import axios from 'axios'
 import { LayoutDashboard, Upload, ScrollText, Settings, Building, ChevronLeft,
          ChevronRight, Activity, Shield, Menu, X, Target, ClipboardList,
          FileWarning, BarChart3, Sparkles, ChevronRight as ArrowRight,
-         Users as UsersIcon, LogOut, User as UserIcon, Server, Home } from 'lucide-react'
+         Users as UsersIcon, LogOut, User as UserIcon, Server, Home,
+         Send, FileText } from 'lucide-react'
 import UploadPage from './pages/UploadPage'
 import Dashboard from './pages/Dashboard'
 import AuditPage from './pages/AuditPage'
@@ -15,33 +16,40 @@ import AdminClinicDetailPage from './pages/AdminClinicDetailPage'
 import AdminAuditPage from './pages/AdminAuditPage'
 import AdminHealthPage from './pages/AdminHealthPage'
 import UsersPage from './pages/UsersPage'
+import SettingsPage from './pages/SettingsPage'
+import KPIExplorerPage from './pages/KPIExplorerPage'
+import SubmissionsPage from './pages/SubmissionsPage'
+import ReportsPage from './pages/ReportsPage'
 import { AuthProvider, useAuth, ROLES, ROLE_LABELS, isSuperAdmin, canManageUsers, canUpload } from './utils/auth'
 
 function getNavItems(user) {
   // Super admin has a completely different menu — platform management
   if (isSuperAdmin(user)) {
     return [
-      { id: 'overview', label: 'Overview', icon: Home },
-      { id: 'clinics', label: 'Clinics', icon: Building },
-      { id: 'audit', label: 'Platform Audit', icon: ScrollText },
-      { id: 'health', label: 'System Health', icon: Server },
-      { id: 'settings', label: 'Settings', icon: Settings },
+      { id: 'overview', label: 'Overview', icon: Home, section: 'Platform' },
+      { id: 'clinics', label: 'Clinics', icon: Building, section: 'Platform' },
+      { id: 'audit', label: 'Platform Audit', icon: ScrollText, section: 'Platform' },
+      { id: 'health', label: 'System Health', icon: Server, section: 'Platform' },
+      { id: 'settings', label: 'Settings', icon: Settings, section: 'Admin' },
     ]
   }
 
   // Clinic users (admin, quality officer, viewer)
   const items = [
-    { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
+    { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, section: 'Overview' },
   ]
   if (canUpload(user)) {
-    items.push({ id: 'upload', label: 'Upload & Calculate', icon: Upload })
+    items.push({ id: 'upload', label: 'Upload & Calculate', icon: Upload, section: 'Data' })
   }
-  items.push({ id: 'audit', label: 'Audit Trail', icon: ScrollText })
+  items.push({ id: 'kpi-explorer', label: 'KPI Explorer', icon: BarChart3, section: 'Data' })
+  items.push({ id: 'submissions', label: 'Submissions', icon: Send, section: 'Compliance' })
+  items.push({ id: 'reports', label: 'Reports', icon: FileText, section: 'Compliance' })
+  items.push({ id: 'audit', label: 'Audit Trail', icon: ScrollText, section: 'Compliance' })
 
   if (canManageUsers(user)) {
-    items.push({ id: 'users', label: 'Users', icon: UsersIcon })
+    items.push({ id: 'users', label: 'Users', icon: UsersIcon, section: 'Admin' })
   }
-  items.push({ id: 'settings', label: 'Settings', icon: Settings })
+  items.push({ id: 'settings', label: 'Settings', icon: Settings, section: 'Admin' })
   return items
 }
 
@@ -82,26 +90,49 @@ function Sidebar({ active, onNavigate, collapsed, onCollapse, user, onLogout }) 
         </div>
       )}
 
-      {/* Nav items */}
-      <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
-        {navItems.map(({ id, label, icon: Icon }) => (
-          <button
-            key={id}
-            onClick={() => onNavigate(id)}
-            className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all ${
-              active === id
-                ? 'bg-white/10 text-white shadow-inner-glow'
-                : 'text-navy-300 hover:text-white hover:bg-white/5'
-            }`}
-            title={collapsed ? label : undefined}
-          >
-            <Icon size={18} className="flex-shrink-0" />
-            {!collapsed && <span>{label}</span>}
-            {active === id && !collapsed && (
-              <div className="ml-auto w-1.5 h-1.5 rounded-full bg-teal-400" />
-            )}
-          </button>
-        ))}
+      {/* Nav items — grouped by section */}
+      <nav className="flex-1 px-3 py-3 overflow-y-auto">
+        {(() => {
+          const sections = []
+          let currentSection = null
+          navItems.forEach(item => {
+            if (item.section !== currentSection) {
+              currentSection = item.section
+              sections.push({ label: currentSection, items: [] })
+            }
+            sections[sections.length - 1].items.push(item)
+          })
+          return sections.map(section => (
+            <div key={section.label} className="mb-2">
+              {!collapsed && (
+                <div className="px-3 pt-3 pb-1.5 text-[9px] font-bold text-navy-400 uppercase tracking-[0.15em]">
+                  {section.label}
+                </div>
+              )}
+              {collapsed && <div className="h-px bg-white/5 mx-2 my-2" />}
+              <div className="space-y-0.5">
+                {section.items.map(({ id, label, icon: Icon }) => (
+                  <button
+                    key={id}
+                    onClick={() => onNavigate(id)}
+                    className={`w-full flex items-center gap-3 px-3 py-2 rounded-xl text-sm font-medium transition-all ${
+                      active === id
+                        ? 'bg-white/10 text-white shadow-inner-glow'
+                        : 'text-navy-300 hover:text-white hover:bg-white/5'
+                    }`}
+                    title={collapsed ? label : undefined}
+                  >
+                    <Icon size={17} className="flex-shrink-0" />
+                    {!collapsed && <span className="text-[13px]">{label}</span>}
+                    {active === id && !collapsed && (
+                      <div className="ml-auto w-1.5 h-1.5 rounded-full bg-teal-400" />
+                    )}
+                  </button>
+                ))}
+              </div>
+            </div>
+          ))
+        })()}
       </nav>
 
       {/* User info + logout */}
@@ -163,17 +194,30 @@ function MobileNav({ active, onNavigate, user, onLogout }) {
               <p className="text-[10px] text-navy-300">{ROLE_LABELS[user.role]} {user.facility_name && `· ${user.facility_name}`}</p>
             </div>
           )}
-          {navItems.map(({ id, label, icon: Icon }) => (
-            <button
-              key={id}
-              onClick={() => { onNavigate(id); setOpen(false) }}
-              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium ${
-                active === id ? 'bg-white/10 text-white' : 'text-navy-300'
-              }`}
-            >
-              <Icon size={16} /> {label}
-            </button>
-          ))}
+          {(() => {
+            const sections = []
+            let currentSection = null
+            navItems.forEach(item => {
+              if (item.section !== currentSection) {
+                currentSection = item.section
+                sections.push({ label: currentSection, items: [] })
+              }
+              sections[sections.length - 1].items.push(item)
+            })
+            return sections.map(section => (
+              <div key={section.label}>
+                <div className="px-3 pt-2 pb-1 text-[9px] font-bold text-navy-400 uppercase tracking-wider">{section.label}</div>
+                {section.items.map(({ id, label, icon: Icon }) => (
+                  <button key={id} onClick={() => { onNavigate(id); setOpen(false) }}
+                    className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium ${
+                      active === id ? 'bg-white/10 text-white' : 'text-navy-300'
+                    }`}>
+                    <Icon size={16} /> {label}
+                  </button>
+                ))}
+              </div>
+            ))
+          })()}
           <button
             onClick={() => { onLogout(); setOpen(false) }}
             className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium text-navy-300 mt-2 border-t border-white/10 pt-3"
@@ -183,139 +227,6 @@ function MobileNav({ active, onNavigate, user, onLogout }) {
         </div>
       )}
     </>
-  )
-}
-
-function SettingsPage({ user }) {
-  const isSA = isSuperAdmin(user)
-  return (
-    <div className="max-w-4xl mx-auto px-6 py-10">
-      <div className="flex items-center gap-4 mb-8">
-        <div className="w-14 h-14 bg-gradient-to-br from-gray-50 to-gray-100 rounded-2xl flex items-center justify-center shadow-card">
-          <Settings size={24} className="text-gray-500" />
-        </div>
-        <div>
-          <h1 className="text-2xl font-black text-navy-500 tracking-tight">Settings</h1>
-          <p className="text-sm text-gray-500">{isSA ? 'Platform configuration and your account' : 'Your account and clinic preferences'}</p>
-        </div>
-      </div>
-
-      <div className="space-y-6">
-        {/* Account section — for everyone */}
-        <div className="bg-white rounded-2xl border border-gray-100 shadow-card p-6">
-          <h3 className="text-sm font-bold text-navy-500 mb-4 flex items-center gap-2">
-            <UserIcon size={14} className="text-blue-500" /> Your Account
-          </h3>
-          <div className="space-y-3 text-sm">
-            <div className="flex justify-between py-2 border-b border-gray-50">
-              <span className="text-gray-500">Name</span>
-              <span className="font-bold text-navy-500">{user?.full_name || '—'}</span>
-            </div>
-            <div className="flex justify-between py-2 border-b border-gray-50">
-              <span className="text-gray-500">Email</span>
-              <span className="font-bold text-navy-500">{user?.email}</span>
-            </div>
-            <div className="flex justify-between py-2 border-b border-gray-50">
-              <span className="text-gray-500">Role</span>
-              <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${
-                isSA ? 'bg-amber-50 text-amber-700' : 'bg-blue-50 text-blue-700'
-              }`}>{ROLE_LABELS[user?.role]}</span>
-            </div>
-            {user?.facility_name && (
-              <div className="flex justify-between py-2">
-                <span className="text-gray-500">Facility</span>
-                <span className="font-bold text-navy-500">{user.facility_name}</span>
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* Super admin platform configuration */}
-        {isSA && (
-          <>
-            <div className="bg-white rounded-2xl border border-gray-100 shadow-card p-6">
-              <h3 className="text-sm font-bold text-navy-500 mb-4 flex items-center gap-2">
-                <Target size={14} className="text-teal-500" /> DOH KPI Targets
-              </h3>
-              <p className="text-xs text-gray-500 mb-4">Default target thresholds applied to all clinics. From DOH Jawda Guidance V2 2026.</p>
-              <div className="space-y-2 text-sm">
-                {[
-                  ['OMC001', 'Asthma Medication Ratio', '≥ 50%'],
-                  ['OMC002', 'Avoidance of Antibiotics', '≥ 50%'],
-                  ['OMC003', 'Time to See Physician', '≥ 80%'],
-                  ['OMC004', 'BMI Counselling', '≥ 50%'],
-                  ['OMC005', 'HbA1c ≤ 8.0%', '> 36%'],
-                  ['OMC006', 'BP < 130/80', '≥ 50%'],
-                  ['OMC007', 'Opioid Use Risk', '≤ 10%'],
-                  ['OMC008', 'eGFR + uACR', '≥ 50%'],
-                ].map(([id, name, target]) => (
-                  <div key={id} className="flex items-center justify-between py-2 border-b border-gray-50">
-                    <div className="flex items-center gap-3">
-                      <span className="text-xs font-black text-navy-300">{id}</span>
-                      <span className="text-xs text-gray-600">{name}</span>
-                    </div>
-                    <span className="text-xs font-bold text-teal-700 bg-teal-50 px-2 py-0.5 rounded">{target}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            <div className="bg-white rounded-2xl border border-gray-100 shadow-card p-6">
-              <h3 className="text-sm font-bold text-navy-500 mb-4 flex items-center gap-2">
-                <Shield size={14} className="text-emerald-500" /> Security & Compliance
-              </h3>
-              <div className="space-y-3 text-sm">
-                <div className="flex justify-between py-2 border-b border-gray-50">
-                  <span className="text-gray-500">Password policy</span>
-                  <span className="font-bold text-navy-500">Min 8 characters</span>
-                </div>
-                <div className="flex justify-between py-2 border-b border-gray-50">
-                  <span className="text-gray-500">Session expiry</span>
-                  <span className="font-bold text-navy-500">12 hours</span>
-                </div>
-                <div className="flex justify-between py-2 border-b border-gray-50">
-                  <span className="text-gray-500">First login</span>
-                  <span className="font-bold text-navy-500">Force password change</span>
-                </div>
-                <div className="flex justify-between py-2">
-                  <span className="text-gray-500">Audit retention</span>
-                  <span className="font-bold text-navy-500">Indefinite</span>
-                </div>
-              </div>
-            </div>
-          </>
-        )}
-
-        {/* Platform info — for everyone */}
-        <div className="bg-white rounded-2xl border border-gray-100 shadow-card p-6">
-          <h3 className="text-sm font-bold text-navy-500 mb-4 flex items-center gap-2">
-            <Activity size={14} className="text-violet-500" /> Platform Information
-          </h3>
-          <div className="space-y-3 text-sm">
-            <div className="flex justify-between py-2 border-b border-gray-50">
-              <span className="text-gray-500">Product</span>
-              <span className="font-bold text-navy-500">Jawda KPI Platform</span>
-            </div>
-            <div className="flex justify-between py-2 border-b border-gray-50">
-              <span className="text-gray-500">Developer</span>
-              <span className="font-bold text-navy-500">TriZodiac</span>
-            </div>
-            <div className="flex justify-between py-2 border-b border-gray-50">
-              <span className="text-gray-500">DOH Guidance</span>
-              <span className="font-bold text-navy-500">V2 2026</span>
-            </div>
-            <div className="flex justify-between py-2 border-b border-gray-50">
-              <span className="text-gray-500">Data Region</span>
-              <span className="font-bold text-navy-500">UAE North (Abu Dhabi)</span>
-            </div>
-            <div className="flex justify-between py-2">
-              <span className="text-gray-500">Compliance</span>
-              <span className="font-bold text-navy-500">ADHICS V2</span>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
   )
 }
 
@@ -486,6 +397,15 @@ function AppShell() {
           ? <UploadPage onResults={handleResults} facility={user.facility_name}
               existingQuarters={clinicHistory?.quarters || []} />
           : <div className="p-10 text-center text-gray-500">You don't have permission to upload data.</div>
+
+      case 'kpi-explorer':
+        return <KPIExplorerPage onSelectKPI={id => { /* TODO: navigate to detail page */ }} />
+
+      case 'submissions':
+        return <SubmissionsPage />
+
+      case 'reports':
+        return <ReportsPage />
 
       case 'audit':
         return <AuditPage facility={user.facility_name || results?.facility} onBack={() => setPage('dashboard')} />
