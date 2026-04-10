@@ -35,6 +35,7 @@ export default function KPIExplorerPage({ onSelectKPI }) {
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
   const [filter, setFilter] = useState('all')
+  const [selectedQ, setSelectedQ] = useState(null)
 
   useEffect(() => {
     axios.get(`${BASE}/api/clinic/dashboard`)
@@ -53,7 +54,6 @@ export default function KPIExplorerPage({ onSelectKPI }) {
 
   const history = data?.history || {}
   const quarters = Object.keys(history).sort()
-  const [selectedQ, setSelectedQ] = useState(null)
   const activeQ = selectedQ || quarters[quarters.length - 1]
   const activeKpis = activeQ ? (history[activeQ]?.kpis || {}) : {}
   const activeIdx = quarters.indexOf(activeQ)
