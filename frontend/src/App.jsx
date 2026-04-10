@@ -26,39 +26,38 @@ import AcceptInvitePage from './pages/AcceptInvitePage'
 import { AuthProvider, useAuth, ROLES, ROLE_LABELS, isSuperAdmin, isClinicAdmin, canManageUsers, canUpload } from './utils/auth'
 import { I18nProvider, useI18n, LanguageSwitcher } from './utils/i18n'
 
-function getNavItems(user) {
-  // Super admin has a completely different menu — platform management
+function getNavItems(user, t) {
   if (isSuperAdmin(user)) {
     return [
-      { id: 'overview', label: 'Overview', icon: Home, section: 'Platform' },
-      { id: 'clinics', label: 'Clinics', icon: Building, section: 'Platform' },
-      { id: 'audit', label: 'Platform Audit', icon: ScrollText, section: 'Platform' },
-      { id: 'health', label: 'System Health', icon: Server, section: 'Platform' },
-      { id: 'settings', label: 'Settings', icon: Settings, section: 'Admin' },
+      { id: 'overview', label: t('nav.overview'), icon: Home, section: t('nav.section.platform') },
+      { id: 'clinics', label: t('nav.overview') === 'نظرة عامة' ? 'العيادات' : 'Clinics', icon: Building, section: t('nav.section.platform') },
+      { id: 'audit', label: t('nav.audit'), icon: ScrollText, section: t('nav.section.platform') },
+      { id: 'health', label: t('nav.overview') === 'نظرة عامة' ? 'صحة النظام' : 'System Health', icon: Server, section: t('nav.section.platform') },
+      { id: 'settings', label: t('nav.settings'), icon: Settings, section: t('nav.section.admin') },
     ]
   }
 
-  // Clinic users (admin, quality officer, viewer)
   const items = [
-    { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, section: 'Overview' },
+    { id: 'dashboard', label: t('nav.dashboard'), icon: LayoutDashboard, section: t('nav.section.overview') },
   ]
   if (canUpload(user)) {
-    items.push({ id: 'upload', label: 'Upload & Calculate', icon: Upload, section: 'Data' })
+    items.push({ id: 'upload', label: t('nav.upload'), icon: Upload, section: t('nav.section.data') })
   }
-  items.push({ id: 'kpi-explorer', label: 'KPI Explorer', icon: BarChart3, section: 'Data' })
-  items.push({ id: 'submissions', label: 'Submissions', icon: Send, section: 'Compliance' })
-  items.push({ id: 'reports', label: 'Reports', icon: FileText, section: 'Compliance' })
-  items.push({ id: 'audit', label: 'Audit Trail', icon: ScrollText, section: 'Compliance' })
+  items.push({ id: 'kpi-explorer', label: t('nav.kpi_explorer'), icon: BarChart3, section: t('nav.section.data') })
+  items.push({ id: 'submissions', label: t('nav.submissions'), icon: Send, section: t('nav.section.compliance') })
+  items.push({ id: 'reports', label: t('nav.reports'), icon: FileText, section: t('nav.section.compliance') })
+  items.push({ id: 'audit', label: t('nav.audit'), icon: ScrollText, section: t('nav.section.compliance') })
 
   if (canManageUsers(user)) {
-    items.push({ id: 'users', label: 'Users', icon: UsersIcon, section: 'Admin' })
+    items.push({ id: 'users', label: t('nav.users'), icon: UsersIcon, section: t('nav.section.admin') })
   }
-  items.push({ id: 'settings', label: 'Settings', icon: Settings, section: 'Admin' })
+  items.push({ id: 'settings', label: t('nav.settings'), icon: Settings, section: t('nav.section.admin') })
   return items
 }
 
 function Sidebar({ active, onNavigate, collapsed, onCollapse, user, onLogout }) {
-  const navItems = getNavItems(user)
+  const { t } = useI18n()
+  const navItems = getNavItems(user, t)
 
   return (
     <aside className={`bg-navy-500 flex flex-col h-screen sticky top-0 transition-all duration-300 ${
@@ -146,9 +145,11 @@ function Sidebar({ active, onNavigate, collapsed, onCollapse, user, onLogout }) 
 
       {/* Language + User info + logout */}
       <div className="px-3 py-4 border-t border-white/5 space-y-2">
-        <div className="px-1 pb-1">
-          <LanguageSwitcher />
-        </div>
+        {!collapsed && (
+          <div className="px-1 pb-1">
+            <LanguageSwitcher />
+          </div>
+        )}
         {!collapsed && user && (
           <div className="px-3 py-2">
             <div className="flex items-center gap-2 mb-1">
@@ -168,14 +169,14 @@ function Sidebar({ active, onNavigate, collapsed, onCollapse, user, onLogout }) 
           title={collapsed ? 'Logout' : undefined}
         >
           <LogOut size={16} className="flex-shrink-0" />
-          {!collapsed && <span>Logout</span>}
+          {!collapsed && <span>{t('nav.logout')}</span>}
         </button>
         <button
           onClick={onCollapse}
           className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-xl text-navy-400 hover:text-navy-200 hover:bg-white/5 transition-all"
-          title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+          title={collapsed ? 'Expand sidebar' : t('nav.collapse')}
         >
-          {collapsed ? <ChevronRight size={16} /> : <><ChevronLeft size={16} /><span className="text-xs">Collapse</span></>}
+          {collapsed ? <ChevronRight size={16} /> : <><ChevronLeft size={16} /><span className="text-xs">{t('nav.collapse')}</span></>}
         </button>
       </div>
     </aside>
@@ -184,7 +185,8 @@ function Sidebar({ active, onNavigate, collapsed, onCollapse, user, onLogout }) 
 
 function MobileNav({ active, onNavigate, user, onLogout }) {
   const [open, setOpen] = useState(false)
-  const navItems = getNavItems(user)
+  const { t } = useI18n()
+  const navItems = getNavItems(user, t)
   return (
     <>
       <div className="lg:hidden bg-navy-500 px-4 py-3 flex items-center justify-between sticky top-0 z-20">
@@ -241,7 +243,7 @@ function MobileNav({ active, onNavigate, user, onLogout }) {
             onClick={() => { onLogout(); setOpen(false) }}
             className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium text-navy-300 mt-2 border-t border-white/10 pt-3"
           >
-            <LogOut size={16} /> Logout
+            <LogOut size={16} /> {t('nav.logout')}
           </button>
         </div>
       )}
