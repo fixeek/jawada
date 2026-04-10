@@ -99,10 +99,10 @@ function ReadinessVerdict({ summary, results }) {
 
   const cfg = {
     ready:     { icon: ShieldCheck, color: 'text-emerald-700', bg: 'from-emerald-50 to-green-50/50', border: 'border-emerald-100',
-                 headline: 'Ready for Jawda Submission', sub: `All ${applicable} applicable KPIs meet DOH targets. ${breakdown}` },
+                 headline: 'Ready for Jawda Submission', sub: `All applicable KPIs meet DOH targets. ${breakdown}` },
     attention: { icon: ShieldAlert, color: 'text-amber-700',   bg: 'from-amber-50 to-orange-50/30',  border: 'border-amber-100',
                  headline: `${below_target + missing_data} of 8 KPIs need attention`,
-                 sub: `${meeting_target} of ${applicable} applicable KPIs meet DOH targets. ${breakdown}` },
+                 sub: `${meeting_target} of 8 KPIs passing. ${breakdown}` },
     not_ready: { icon: ShieldX,     color: 'text-red-600',     bg: 'from-red-50 to-rose-50/30',      border: 'border-red-100',
                  headline: 'Not ready for Jawda submission',
                  sub: `${breakdown}. Review the action plan below.` },
@@ -124,7 +124,7 @@ function ReadinessVerdict({ summary, results }) {
         <div className="text-right hidden sm:block">
           <div className={`text-4xl font-black ${cfg.color} tracking-tight`}>{applicable > 0 ? `${readiness_pct}%` : '—'}</div>
           <div className="text-[10px] text-gray-400 font-bold uppercase tracking-wider mt-0.5">
-            {meeting_target} of {applicable} KPIs passing
+            {meeting_target} of 8 KPIs passing
           </div>
         </div>
       </div>
@@ -359,10 +359,10 @@ function QuarterComparison({ currentQ, currentKpis, prevQ, prevData }) {
         {/* Summary row */}
         <div className="px-5 py-3 bg-navy-50/30 border-t border-gray-100 flex items-center justify-between text-xs">
           <span className="text-gray-500 font-medium">
-            {prevQ}: {prevData.jawda_summary?.meeting_target || 0}/{8 - (prevData.jawda_summary?.not_applicable || 0)} passing
+            {prevQ}: {prevData.jawda_summary?.meeting_target || 0}/8 passing
           </span>
           <span className="text-navy-500 font-bold">
-            {currentQ}: {currentKpis ? Object.values(currentKpis).filter(k => k.meets_target === true).length : 0}/{Object.values(currentKpis).filter(k => k.status !== 'insufficient_data' && k.status !== 'not_applicable').length} passing
+            {currentQ}: {currentKpis ? Object.values(currentKpis).filter(k => k.meets_target === true).length : 0}/8 passing
           </span>
         </div>
       </div>
@@ -941,7 +941,6 @@ export default function Dashboard({ results, onBack, onAudit }) {
                 {q}
                 {history[q]?.jawda_summary && (() => {
                   const s = history[q].jawda_summary
-                  const na = s.not_applicable || 0
                   const isActive = q === activeQ
                   return (
                     <span className={`ml-1.5 ${
@@ -949,21 +948,17 @@ export default function Dashboard({ results, onBack, onAudit }) {
                         ? (s.verdict === 'ready' ? 'text-emerald-300' : s.verdict === 'attention' ? 'text-amber-300' : 'text-red-300')
                         : (s.verdict === 'ready' ? 'text-emerald-500' : s.verdict === 'attention' ? 'text-amber-500' : 'text-red-400')
                     }`}>
-                      {s.meeting_target}/{8 - na}
+                      {s.meeting_target}/8
                     </span>
                   )
                 })()}
               </button>
             ))}
-            {prevData && (() => {
-              const ps = prevData.jawda_summary || {}
-              const pna = ps.not_applicable || 0
-              return (
-                <span className="text-[10px] text-gray-400 ml-auto">
-                  vs {prevQ}: {ps.meeting_target || 0}/{8 - pna} passing
-                </span>
-              )
-            })()}
+            {prevData && (
+              <span className="text-[10px] text-gray-400 ml-auto">
+                vs {prevQ}: {prevData.jawda_summary?.meeting_target || 0}/8 passing
+              </span>
+            )}
           </div>
         )}
 
