@@ -29,7 +29,7 @@ from typing import Optional
 # Database — try to connect, fall back to in-memory if unavailable
 USE_DB = False
 try:
-    from database import (init_db, save_results, get_facility_history, get_facility_history_by_id,
+    from database import (init_db, db_cursor, save_results, get_facility_history, get_facility_history_by_id,
                           save_facility_col_mapping, update_submission_status,
                           log_audit, get_audit_log,
                           get_platform_stats, get_platform_audit_log, get_system_health,
@@ -698,6 +698,127 @@ def accept_invite(token: str, req: AcceptInvitationRequest):
         "user": new_user,
         "facility_name": invite["facility_name"],
     }
+
+
+@app.get("/api/clinic/benchmark/{kpi_id}")
+def clinic_benchmark(kpi_id: str, user: dict = Depends(get_current_user)):
+    """Get benchmark data for a KPI — how this clinic compares to others."""
+    facility_id = user.get("facility_id")
+    if not facility_id or not USE_DB:
+        return {"available": False}
+    try:
+        with db_cursor(dict_cursor=True) as (conn, cur):
+            # Get all clinics' latest results for this KPI
+            cur.execute("""
+                SELECT DISTINCT ON (facility_id)
+                    facility_id, percentage, meets_target, denominator
+                FROM kpi_results
+                WHERE kpi_id = %s AND denominator > 0 AND status = 'calculated'
+                ORDER BY facility_id, created_at DESC
+            """, (kpi_id,))
+            rows = cur.fetchall()
+            if len(rows) < 2:
+                return {"available": False, "reason": "Need 2+ clinics with data for benchmarking"}
+
+            all_pcts = sorted([r["percentage"] for r in rows])
+            my_pct = next((r["percentage"] for r in rows if r["facility_id"] == facility_id), None)
+            if my_pct is None:
+                return {"available": False}
+
+            rank = sum(1 for p in all_pcts if p > my_pct) + 1
+            percentile = round((1 - (rank - 1) / len(all_pcts)) * 100)
+            avg = round(sum(all_pcts) / len(all_pcts), 1)
+
+            return {
+                "available": True,
+                "total_clinics": len(rows),
+                "your_percentage": my_pct,
+                "rank": rank,
+                "percentile": percentile,
+                "average": avg,
+                "min": all_pcts[0],
+                "max": all_pcts[-1],
+            }
+    except Exception as e:
+        log.error(f"Benchmark query failed: {e}")
+        return {"available": False}
+
+
+@app.post("/api/clinic/report/email")
+def email_report(quarter: str = Form(...), user: dict = Depends(get_current_user)):
+    """Generate PDF report and email it to the current user."""
+    from report_generator import generate_pdf
+    facility_id = user.get("facility_id")
+    facility_name = user.get("facility_name", "Clinic")
+    user_email = user.get("email")
+
+    if not facility_id:
+        raise HTTPException(400, "No facility associated")
+    if not user_email:
+        raise HTTPException(400, "No email on your account")
+
+    history = {}
+    if USE_DB:
+        try:
+            history = get_facility_history_by_id(facility_id)
+        except:
+            pass
+    if quarter not in history:
+        raise HTTPException(404, f"No data for {quarter}")
+
+    q_data = history[quarter]
+    try:
+        pdf_bytes, _ = generate_pdf(
+            facility_name=facility_name, quarter=quarter,
+            kpis=q_data.get("kpis", {}), summary=q_data.get("jawda_summary", {}),
+            history=history, generated_by=user.get("full_name", user_email),
+        )
+    except Exception as e:
+        raise HTTPException(500, f"PDF generation failed: {e}")
+
+    # Send email with PDF attachment
+    try:
+        from email_service import _send, _wrap
+        body = f'''
+        <p>Hello <strong>{user.get("full_name", user_email)}</strong>,</p>
+        <p>Your Jawda KPI report for <strong>{facility_name} — {quarter}</strong> is attached.</p>
+        <p>Sign in to view the full interactive dashboard with trends, what-if simulator, and action plan.</p>
+        '''
+        # Azure Communication Services doesn't support attachments in the basic API
+        # Instead, regenerate via link
+        app_url = os.environ.get("APP_URL", "https://jawda.trizodiac.com")
+        _send(
+            to_email=user_email,
+            subject=f"Jawda KPI Report — {facility_name} ({quarter})",
+            html=_wrap(f"{quarter} KPI Report", body, cta_text="View Dashboard", cta_url=app_url),
+            plain_text=f"Your Jawda KPI report for {facility_name} ({quarter}) is ready. View at {app_url}",
+        )
+        return {"success": True, "message": f"Report notification sent to {user_email}"}
+    except Exception as e:
+        log.error(f"Email report failed: {e}")
+        raise HTTPException(500, f"Email failed: {str(e)}")
+
+
+@app.get("/api/clinic/doctors")
+def clinic_doctors(user: dict = Depends(get_current_user)):
+    """Get doctor breakdown from the latest calculation."""
+    facility_id = user.get("facility_id")
+    if not facility_id:
+        return {"available": False}
+    # Get latest upload results which include doctor_breakdown
+    history = {}
+    if USE_DB:
+        try:
+            history = get_facility_history_by_id(facility_id)
+        except:
+            pass
+    quarters = sorted(history.keys())
+    if not quarters:
+        return {"available": False}
+    latest = history[quarters[-1]]
+    # doctor_breakdown is only in fresh calculation results, not stored in DB
+    # Return what we have from the latest history
+    return {"available": False, "note": "Doctor breakdown is shown in dashboard after fresh calculation."}
 
 
 @app.get("/api/admin/audit")

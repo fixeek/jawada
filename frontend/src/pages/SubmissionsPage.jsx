@@ -33,7 +33,7 @@ export default function SubmissionsPage() {
     try {
       await axios.post(`${BASE}/api/clinic/submission`, { quarter, status: newStatus, notes: '' })
       loadData()
-    } catch {}
+    } catch (e) {}
   }
 
   if (loading) {

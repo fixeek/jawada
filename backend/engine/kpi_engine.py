@@ -486,6 +486,7 @@ FIELD_DEFINITIONS = {
     "wait_minutes":    {"label": "Wait Time (minutes)", "required": False, "file": "Time Data", "kpis": ["OMC003"], "aliases": ["duration_from_reception_to_doctor_checkin","duration from reception to doctor checkin","duration_from_reception_to_doctor_checkout","wait_time","wait_minutes"]},
     "visit_type":      {"label": "Visit Type (I/O)", "required": False, "file": "E-Claims", "kpis": [], "aliases": ["visit_type","visit type","i_o","ipop"]},
     "cpt_code":        {"label": "CPT Code", "required": False, "file": "Visit Details", "kpis": [], "aliases": ["cpt_code","cpt code","cpt","procedure_code","procedure code","enm","e&m","procedures"]},
+    "doctor_name":     {"label": "Doctor / Physician Name", "required": False, "file": "KPI Data", "kpis": ["ALL"], "aliases": ["treating_physician","treating physician","dr_name","dr name","doctor_name","doctor name","physician_name","physician","attending_doctor","attending_physician","consultant"]},
 }
 
 
@@ -577,6 +578,10 @@ def map_columns(df: pd.DataFrame) -> Dict[str, Optional[str]]:
         # Visit type
         "visit_type":      find_col(df, [
             "visit_type","visit type","i_o","ipop"]),
+        "doctor_name":     find_col(df, [
+            "treating_physician","treating physician","dr_name","dr name",
+            "doctor_name","doctor name","physician_name","physician",
+            "attending_doctor","attending_physician","consultant"]),
     }
     # Also check lab CPT columns (numeric column names from spreadsheet)
     for cpt in KIDNEY_CPT:
@@ -1606,6 +1611,31 @@ def run_all_kpis(df: pd.DataFrame, quarter: str = None, col_mapping_override: di
                    else "attention" if len(meeting) > 0
                    else "not_ready",
     }
+
+    # ── Doctor-level breakdown ──
+    doctor_col = col_map.get("doctor_name")
+    if doctor_col and doctor_col in df.columns:
+        from collections import defaultdict
+        doctor_stats = defaultdict(lambda: {"patients": 0, "kpi_contributions": {}})
+        for _, row in df.iterrows():
+            doc = str(row.get(doctor_col, "")).strip()
+            if not doc or doc.lower() in ["", "nan", "none"]:
+                continue
+            pid = str(row.get(col_map.get("patient_id", ""), ""))
+            doctor_stats[doc]["patients"] += 1
+
+        # Count unique doctors and patients
+        results["doctor_breakdown"] = {
+            "available": True,
+            "column": doctor_col,
+            "total_doctors": len(doctor_stats),
+            "doctors": sorted([
+                {"name": name, "patient_count": info["patients"]}
+                for name, info in doctor_stats.items()
+            ], key=lambda x: -x["patient_count"])[:50],  # Top 50
+        }
+    else:
+        results["doctor_breakdown"] = {"available": False}
 
     return results
 

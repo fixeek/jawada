@@ -11,6 +11,8 @@ import DataQuality from '../components/DataQuality'
 import PrintReport from '../components/PrintReport'
 import TrendChart from '../components/TrendChart'
 import ComplianceCalendar from '../components/ComplianceCalendar'
+import DoctorBreakdown from '../components/DoctorBreakdown'
+import DataQualityTrend from '../components/DataQualityTrend'
 
 const SUBMIT_BASE = import.meta.env.VITE_API_URL || ''
 
@@ -32,7 +34,7 @@ function SubmissionTracker({ quarter, submission, onUpdate }) {
         quarter, status: newStatus, notes: '',
       })
       onUpdate?.()
-    } catch {}
+    } catch (e) {}
   }
 
   const nextStep = currentIdx < STATUS_STEPS.length - 1 ? STATUS_STEPS[currentIdx + 1] : null
@@ -635,7 +637,7 @@ function AuditTrail({ facility }) {
       const data = await api.getAuditLog(facility)
       setEntries(data.entries || [])
       setOpen(true)
-    } catch {
+    } catch (e) {
       setEntries([])
       setOpen(true)
     } finally {
@@ -1066,6 +1068,19 @@ export default function Dashboard({ results, onBack, onAudit }) {
         )}
 
         {/* Merge Diagnostics — show warnings if any merge had issues */}
+        {/* Doctor Breakdown + Data Quality Trend */}
+        {(results.doctor_breakdown?.available || quarterList.length > 1) && (
+          <div className={`mt-8 grid gap-4 ${results.doctor_breakdown?.available && quarterList.length > 1 ? 'grid-cols-1 lg:grid-cols-2' : 'grid-cols-1'}`}>
+            {results.doctor_breakdown?.available && (
+              <DoctorBreakdown data={results.doctor_breakdown} />
+            )}
+            {quarterList.length > 1 && (
+              <DataQualityTrend history={history} />
+            )}
+          </div>
+        )}
+
+        {/* Merge Diagnostics */}
         {results.merge_diagnostics?.length > 0 && isLatest && (
           <Collapsible title="Data Merge Report" icon={Layers}>
             <div className="bg-white rounded-2xl border border-gray-100 shadow-card p-5 space-y-2">
