@@ -1219,6 +1219,8 @@ async def calculate_multi(
         df_merged = normalise_df(df_primary)
         col_map = map_columns(df_merged)
         pid_col = col_map.get("patient_id")
+        log.info(f"Primary ({primary_slot}): {len(df_merged)} rows, columns={list(df_merged.columns)[:20]}")
+        log.info(f"Primary mapped: patient_id={pid_col}, file_no={col_map.get('file_no')}")
         merge_diagnostics = []
 
         def _normalize_join_key(series):
@@ -1278,6 +1280,8 @@ async def calculate_multi(
             df_time = load_file(paths["time_data"])
             df_time_norm = normalise_df(df_time)
             time_col_map = map_columns(df_time_norm)
+            log.info(f"  Time Data: {len(df_time_norm)} rows, columns={list(df_time_norm.columns)}")
+            log.info(f"  Time Data mapped: { {k:v for k,v in time_col_map.items() if v} }")
             wait_col = time_col_map.get("wait_minutes")
             reg_col = time_col_map.get("registration_ts")
             consult_col = time_col_map.get("consult_ts")
