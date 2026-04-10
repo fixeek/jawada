@@ -22,6 +22,7 @@ import NotificationBell from './components/NotificationBell'
 import KPIDetailPage from './pages/KPIDetailPage'
 import SubmissionsPage from './pages/SubmissionsPage'
 import ReportsPage from './pages/ReportsPage'
+import AcceptInvitePage from './pages/AcceptInvitePage'
 import { AuthProvider, useAuth, ROLES, ROLE_LABELS, isSuperAdmin, canManageUsers, canUpload } from './utils/auth'
 
 function getNavItems(user) {
@@ -281,6 +282,12 @@ function AppShell() {
         <span className="w-8 h-8 border-2 border-navy-200 border-t-navy-500 rounded-full animate-spin" />
       </div>
     )
+  }
+
+  // Check for invitation token in URL
+  const inviteToken = new URLSearchParams(window.location.search).get('invite')
+  if (inviteToken && !user) {
+    return <AcceptInvitePage token={inviteToken} />
   }
 
   if (!user) {

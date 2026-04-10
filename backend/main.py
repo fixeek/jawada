@@ -34,7 +34,8 @@ try:
                           log_audit, get_audit_log,
                           get_platform_stats, get_platform_audit_log, get_system_health,
                           create_notification, get_notifications, mark_notifications_read,
-                          get_unread_count, generate_deadline_notifications)
+                          get_unread_count, generate_deadline_notifications,
+                          create_invitation, get_invitation, use_invitation)
     init_db()
     USE_DB = True
     log.info("✓ Connected to PostgreSQL")
@@ -405,6 +406,16 @@ class UpdateSubmissionRequest(BaseModel):
     status: str  # calculated, under_review, approved, submitted, accepted
     notes: Optional[str] = ""
 
+class CreateInvitationRequest(BaseModel):
+    facility_name: str
+    admin_email: str
+    admin_full_name: Optional[str] = ""
+    license_no: Optional[str] = None
+    doh_facility_id: Optional[str] = None
+
+class AcceptInvitationRequest(BaseModel):
+    password: str
+
 
 def get_current_user(authorization: Optional[str] = Header(None)) -> dict:
     """Dependency: extract and verify JWT token, return user dict."""
@@ -582,6 +593,100 @@ def change_password(req: ChangePasswordRequest, user: dict = Depends(get_current
 def admin_platform_stats(user: dict = Depends(require_super_admin)):
     """Super admin: platform-wide statistics."""
     return get_platform_stats()
+
+
+# ── Invitations ─────────────────────────────────────────────────────
+
+@app.post("/api/admin/invitations")
+def send_invitation(req: CreateInvitationRequest, user: dict = Depends(require_super_admin)):
+    """Super admin sends a clinic onboarding invitation."""
+    token = create_invitation(
+        facility_name=req.facility_name,
+        admin_email=req.admin_email,
+        admin_full_name=req.admin_full_name or "",
+        license_no=req.license_no,
+        doh_facility_id=req.doh_facility_id,
+        created_by=user.get("id"),
+    )
+    invite_url = f"{os.environ.get('APP_URL', 'https://jawda.trizodiac.com')}?invite={token}"
+
+    # Send invitation email
+    try:
+        from email_service import _send, _wrap
+        body = f'''
+        <p>Hello <strong>{req.admin_full_name or req.admin_email}</strong>,</p>
+        <p>You have been invited to join the <strong>Jawda KPI Platform</strong> as the
+        Clinic Admin for <strong>{req.facility_name}</strong>.</p>
+        <p>Click the button below to set your password and activate your account:</p>
+        '''
+        _send(
+            to_email=req.admin_email,
+            subject=f"You're invited to Jawda KPI Platform — {req.facility_name}",
+            html=_wrap("Clinic Invitation", body, cta_text="Accept Invitation", cta_url=invite_url),
+            plain_text=f"You're invited to Jawda KPI as admin for {req.facility_name}. Accept at {invite_url}",
+        )
+    except Exception as e:
+        log.error(f"Invitation email failed: {e}")
+
+    return {"success": True, "token": token, "invite_url": invite_url}
+
+
+@app.get("/api/invite/{token}")
+def get_invite(token: str):
+    """Public: get invitation details by token."""
+    invite = get_invitation(token)
+    if not invite:
+        raise HTTPException(404, "Invitation not found, expired, or already used.")
+    return {
+        "facility_name": invite["facility_name"],
+        "admin_email": invite["admin_email"],
+        "admin_full_name": invite.get("admin_full_name", ""),
+        "expires_at": invite["expires_at"],
+    }
+
+
+@app.post("/api/invite/{token}/accept")
+def accept_invite(token: str, req: AcceptInvitationRequest):
+    """Public: accept invitation — creates facility + admin user, returns JWT."""
+    invite = get_invitation(token)
+    if not invite:
+        raise HTTPException(404, "Invitation not found, expired, or already used.")
+
+    if len(req.password) < 8:
+        raise HTTPException(400, "Password must be at least 8 characters")
+
+    # Create facility
+    facility_id = create_facility(
+        name=invite["facility_name"],
+        license_no=invite.get("license_no"),
+        doh_facility_id=invite.get("doh_facility_id"),
+    )
+
+    # Create admin user
+    try:
+        new_user = create_user(
+            email=invite["admin_email"],
+            password=req.password,
+            full_name=invite.get("admin_full_name", ""),
+            role=ROLE_CLINIC_ADMIN,
+            facility_id=facility_id,
+            must_change_password=False,  # They just set it
+        )
+    except EmailAlreadyExistsError:
+        raise HTTPException(409, "This email is already registered.")
+
+    # Mark invitation as used
+    use_invitation(token)
+
+    # Generate JWT token so user is logged in immediately
+    jwt_token = create_token(new_user["id"])
+
+    return {
+        "success": True,
+        "token": jwt_token,
+        "user": new_user,
+        "facility_name": invite["facility_name"],
+    }
 
 
 @app.get("/api/admin/audit")

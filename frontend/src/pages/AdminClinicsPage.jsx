@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import axios from 'axios'
 import { Building, Plus, Users, FileText, X, AlertCircle, CheckCircle,
-         ChevronRight, Sparkles } from 'lucide-react'
+         ChevronRight, Sparkles, Mail, Copy } from 'lucide-react'
 import { getErrorMessage } from '../utils/errors'
 
 const BASE = import.meta.env.VITE_API_URL || ''
@@ -146,6 +146,10 @@ function OnboardModal({ onClose, onSuccess }) {
 export default function AdminClinicsPage({ onSelectClinic }) {
   const [facilities, setFacilities] = useState(null)
   const [showOnboard, setShowOnboard] = useState(false)
+  const [showInvite, setShowInvite] = useState(false)
+  const [inviteForm, setInviteForm] = useState({ facility_name: '', admin_email: '', admin_full_name: '', license_no: '' })
+  const [inviteResult, setInviteResult] = useState(null)
+  const [inviteLoading, setInviteLoading] = useState(false)
   const [success, setSuccess] = useState(null)
 
   function loadFacilities() {
@@ -169,10 +173,16 @@ export default function AdminClinicsPage({ onSelectClinic }) {
               <p className="text-sm text-gray-500">Manage all registered clinics</p>
             </div>
           </div>
-          <button onClick={() => setShowOnboard(true)}
-            className="flex items-center gap-2 bg-gradient-to-r from-navy-500 to-navy-400 text-white font-bold text-sm px-5 py-3 rounded-xl shadow-elevated hover:shadow-card-hover transition-all">
-            <Plus size={16} /> Onboard Clinic
-          </button>
+          <div className="flex items-center gap-2">
+            <button onClick={() => setShowInvite(true)}
+              className="flex items-center gap-2 bg-teal-50 text-teal-700 font-bold text-sm px-5 py-3 rounded-xl border border-teal-200 hover:bg-teal-100 transition-all">
+              <Mail size={16} /> Send Invite
+            </button>
+            <button onClick={() => setShowOnboard(true)}
+              className="flex items-center gap-2 bg-gradient-to-r from-navy-500 to-navy-400 text-white font-bold text-sm px-5 py-3 rounded-xl shadow-elevated hover:shadow-card-hover transition-all">
+              <Plus size={16} /> Onboard Clinic
+            </button>
+          </div>
         </div>
 
         {success && (
@@ -236,6 +246,91 @@ export default function AdminClinicsPage({ onSelectClinic }) {
             loadFacilities()
           }}
         />
+      )}
+
+      {showInvite && (
+        <div className="fixed inset-0 bg-navy-500/60 backdrop-blur-md flex items-center justify-center z-50 p-4 animate-fade-in" onClick={() => { setShowInvite(false); setInviteResult(null) }}>
+          <div className="bg-white rounded-3xl shadow-modal w-full max-w-lg animate-scale-in" onClick={e => e.stopPropagation()}>
+            <div className="bg-gradient-to-r from-teal-500 to-teal-400 px-7 py-5 flex items-center justify-between rounded-t-3xl">
+              <div>
+                <h2 className="text-white font-bold text-lg">Send Clinic Invitation</h2>
+                <p className="text-teal-100 text-xs mt-0.5">Clinic admin will receive an email to set up their account</p>
+              </div>
+              <button onClick={() => { setShowInvite(false); setInviteResult(null) }} className="text-teal-200 hover:text-white w-9 h-9 rounded-xl hover:bg-white/10 flex items-center justify-center">
+                <X size={18} />
+              </button>
+            </div>
+
+            {inviteResult ? (
+              <div className="p-7 space-y-4">
+                <div className="flex items-start gap-3 bg-emerald-50 border border-emerald-100 rounded-xl p-4">
+                  <CheckCircle size={18} className="text-emerald-500 flex-shrink-0 mt-0.5" />
+                  <div>
+                    <p className="text-sm font-bold text-emerald-700">Invitation sent!</p>
+                    <p className="text-xs text-emerald-600 mt-0.5">An email has been sent to {inviteForm.admin_email}</p>
+                  </div>
+                </div>
+                <div>
+                  <p className="text-[11px] font-bold text-navy-500 mb-1.5 uppercase tracking-wider">Invitation Link</p>
+                  <div className="flex items-center gap-2 bg-navy-50/40 border border-gray-200 rounded-xl px-4 py-3">
+                    <code className="flex-1 text-[10px] font-mono text-navy-500 break-all">{inviteResult.invite_url}</code>
+                    <button onClick={() => { navigator.clipboard.writeText(inviteResult.invite_url) }}
+                      className="text-gray-400 hover:text-teal-500 transition-colors flex-shrink-0">
+                      <Copy size={14} />
+                    </button>
+                  </div>
+                  <p className="text-[9px] text-gray-500 mt-1.5">Share this link if the email doesn't arrive. Expires in 7 days.</p>
+                </div>
+                <button onClick={() => { setShowInvite(false); setInviteResult(null); setInviteForm({ facility_name: '', admin_email: '', admin_full_name: '', license_no: '' }) }}
+                  className="w-full py-3 rounded-xl bg-gradient-to-r from-navy-500 to-navy-400 text-white font-bold text-sm">
+                  Done
+                </button>
+              </div>
+            ) : (
+              <form onSubmit={async (e) => {
+                e.preventDefault()
+                setInviteLoading(true)
+                try {
+                  const { data } = await axios.post(`${BASE}/api/admin/invitations`, inviteForm)
+                  setInviteResult(data)
+                } catch (err) {
+                  alert(getErrorMessage(err, 'Failed to send invitation'))
+                } finally {
+                  setInviteLoading(false)
+                }
+              }} className="p-7 space-y-4">
+                <div>
+                  <label className="block text-[11px] font-bold text-navy-500 mb-1.5 uppercase tracking-wider">Clinic Name *</label>
+                  <input required value={inviteForm.facility_name} onChange={e => setInviteForm(f => ({ ...f, facility_name: e.target.value }))}
+                    className="w-full bg-navy-50/40 border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-400/15" />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-bold text-navy-500 mb-1.5 uppercase tracking-wider">Admin Email *</label>
+                  <input type="email" required value={inviteForm.admin_email} onChange={e => setInviteForm(f => ({ ...f, admin_email: e.target.value }))}
+                    className="w-full bg-navy-50/40 border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-400/15" />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-bold text-navy-500 mb-1.5 uppercase tracking-wider">Admin Full Name</label>
+                  <input value={inviteForm.admin_full_name} onChange={e => setInviteForm(f => ({ ...f, admin_full_name: e.target.value }))}
+                    className="w-full bg-navy-50/40 border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-400/15" />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-bold text-navy-500 mb-1.5 uppercase tracking-wider">License No</label>
+                  <input value={inviteForm.license_no} onChange={e => setInviteForm(f => ({ ...f, license_no: e.target.value }))}
+                    className="w-full bg-navy-50/40 border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-400/15" />
+                </div>
+                <div className="flex gap-3 pt-2">
+                  <button type="button" onClick={() => setShowInvite(false)}
+                    className="flex-1 py-3 rounded-xl border border-gray-200 text-gray-600 font-bold text-sm hover:bg-gray-50">Cancel</button>
+                  <button type="submit" disabled={inviteLoading}
+                    className="flex-1 py-3 rounded-xl bg-gradient-to-r from-teal-500 to-teal-400 text-white font-bold text-sm disabled:opacity-50">
+                    {inviteLoading ? 'Sending...' : 'Send Invitation'}
+                  </button>
+                </div>
+              </form>
+            )}
+          </div>
+        </div>
       )}
     </div>
   )

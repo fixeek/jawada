@@ -192,6 +192,20 @@ def init_db():
         CREATE INDEX IF NOT EXISTS idx_notif_facility ON notifications(facility_id);
         CREATE INDEX IF NOT EXISTS idx_notif_user ON notifications(user_id);
 
+        CREATE TABLE IF NOT EXISTS invitations (
+            id SERIAL PRIMARY KEY,
+            token VARCHAR(100) UNIQUE NOT NULL,
+            facility_name VARCHAR(255) NOT NULL,
+            license_no VARCHAR(100),
+            doh_facility_id VARCHAR(100),
+            admin_email VARCHAR(255) NOT NULL,
+            admin_full_name VARCHAR(255),
+            created_by INTEGER,
+            used_at TIMESTAMP,
+            expires_at TIMESTAMP NOT NULL,
+            created_at TIMESTAMP DEFAULT NOW()
+        );
+
         CREATE TABLE IF NOT EXISTS audit_log (
             id SERIAL PRIMARY KEY,
             facility_id INTEGER REFERENCES facilities(id),
@@ -912,3 +926,47 @@ def generate_deadline_notifications(facility_id):
                 message=f"{quarter} submission due {deadline.strftime('%d %b %Y')}. Submit at bpmweb.doh.gov.ae.",
                 metadata={"quarter": quarter, "days_left": days_left},
             )
+
+
+# ── Invitations ───────────────────────────────────────────────────
+
+def create_invitation(facility_name, admin_email, admin_full_name="",
+                       license_no=None, doh_facility_id=None, created_by=None, days_valid=7):
+    import secrets
+    token = secrets.token_urlsafe(32)
+    with db_cursor() as (conn, cur):
+        cur.execute("""
+            INSERT INTO invitations (token, facility_name, license_no, doh_facility_id,
+                admin_email, admin_full_name, created_by, expires_at)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, NOW() + INTERVAL '%s days')
+            RETURNING token
+        """, (token, facility_name, license_no, doh_facility_id,
+              admin_email, admin_full_name, created_by, days_valid))
+        conn.commit()
+    return token
+
+
+def get_invitation(token):
+    with db_cursor(dict_cursor=True) as (conn, cur):
+        cur.execute("""
+            SELECT * FROM invitations
+            WHERE token = %s AND used_at IS NULL AND expires_at > NOW()
+        """, (token,))
+        row = cur.fetchone()
+        if row:
+            entry = dict(row)
+            for k in ['used_at', 'expires_at', 'created_at']:
+                if entry.get(k):
+                    entry[k] = entry[k].isoformat()
+            return entry
+        return None
+
+
+def use_invitation(token):
+    with db_cursor() as (conn, cur):
+        cur.execute("""
+            UPDATE invitations SET used_at = NOW()
+            WHERE token = %s AND used_at IS NULL AND expires_at > NOW()
+        """, (token,))
+        conn.commit()
+        return cur.rowcount > 0
