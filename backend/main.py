@@ -1221,6 +1221,77 @@ async def validate_multi(
     for w in id_warnings:
         warnings.append(w["message"])
 
+    # Duplicate MRN detection + Column completeness check
+    data_quality_warnings = []
+    if "kpi_data" in file_paths and results.get("kpi_data", {}).get("valid"):
+        try:
+            if not 'df_primary' in dir():
+                df_primary = load_file(file_paths["kpi_data"])
+                df_primary = normalise_df(df_primary)
+                primary_map = map_columns(df_primary)
+
+            pid_col = primary_map.get("patient_id")
+            age_col = primary_map.get("age")
+
+            # Duplicate MRN with different ages
+            if pid_col and age_col:
+                import re as _re
+                patient_ages = {}
+                for _, row in df_primary.iterrows():
+                    pid = str(row.get(pid_col, "")).strip()
+                    age_val = str(row.get(age_col, ""))
+                    m = _re.search(r'(\d+)', age_val)
+                    age = int(m.group(1)) if m else None
+                    if pid and age is not None:
+                        if pid not in patient_ages:
+                            patient_ages[pid] = set()
+                        patient_ages[pid].add(age)
+
+                suspicious = {pid: ages for pid, ages in patient_ages.items()
+                              if len(ages) > 1 and (max(ages) - min(ages)) > 5}
+                if suspicious:
+                    sample = list(suspicious.items())[:3]
+                    sample_str = "; ".join(f"ID {pid}: ages {sorted(ages)}" for pid, ages in sample)
+                    data_quality_warnings.append({
+                        "type": "duplicate_mrn",
+                        "severity": "warning",
+                        "count": len(suspicious),
+                        "message": f"{len(suspicious)} patient IDs appear with significantly different ages "
+                                   f"(may be different patients sharing the same ID). "
+                                   f"Examples: {sample_str}. "
+                                   f"This affects per-patient deduplication accuracy."
+                    })
+
+            # Column completeness — which KPIs can/cannot run
+            kpi_column_requirements = {
+                "OMC001": {"needs": ["icd_code", "drug_name"], "label": "Asthma Medication Ratio"},
+                "OMC003": {"needs": ["wait_minutes"], "label": "Time to See Physician", "alt_file": "Time Data"},
+                "OMC004": {"needs": ["bmi"], "label": "BMI Assessment"},
+                "OMC005": {"needs": ["hba1c"], "label": "Diabetes HbA1c Control"},
+                "OMC006": {"needs": ["bp_reading"], "label": "Controlling High BP"},
+                "OMC007": {"needs": ["opioid"], "label": "Opioid Risk"},
+                "OMC008": {"needs": ["egfr"], "label": "Kidney Disease Evaluation"},
+            }
+            missing_kpis = []
+            for kpi_id, req in kpi_column_requirements.items():
+                has_any = any(primary_map.get(col) for col in req["needs"])
+                if not has_any and "alt_file" not in req:
+                    missing_kpis.append(f"{kpi_id} ({req['label']})")
+
+            if missing_kpis:
+                data_quality_warnings.append({
+                    "type": "missing_columns",
+                    "severity": "info",
+                    "message": f"KPI Excel is missing columns needed for: {', '.join(missing_kpis)}. "
+                               f"These KPIs will show as 'Insufficient Data'. "
+                               f"Ask your HIS vendor to include these fields in the export."
+                })
+        except Exception as e:
+            log.error(f"Data quality validation failed: {e}")
+
+    for w in data_quality_warnings:
+        warnings.append(w["message"])
+
     total_rows = sum(r.get("rows", 0) for r in results.values() if r.get("valid"))
     prev_total_rows = sum(r.get("rows", 0) for r in prev_results.values() if r.get("valid"))
 
@@ -1237,6 +1308,7 @@ async def validate_multi(
         "date_range": date_range,
         "warnings": warnings,
         "id_warnings": id_warnings,
+        "data_quality_warnings": data_quality_warnings,
     }
 
 
@@ -1332,7 +1404,7 @@ async def calculate_multi(
 
         # ── Merge Time Data ─────────────────────────────────────────────
         time_merge_failed = False
-        df_time_standalone = None  # Keep reference for OMC003 fallback
+        df_time_standalone = None  # Always kept for OMC003 — Time Data is the source of truth for wait times
         if "time_data" in paths and "time_data" != primary_slot:
             df_time = load_file(paths["time_data"])
             df_time_norm = normalise_df(df_time)
@@ -1346,7 +1418,9 @@ async def calculate_multi(
             # Collect all useful time columns
             time_value_cols = [c for c in [wait_col, reg_col, consult_col] if c]
 
+            # Always keep Time Data for standalone OMC003 calculation
             if time_value_cols:
+                df_time_standalone = df_time_norm
                 # Try multiple join key strategies — always require a real key match
                 time_file_col = time_col_map.get("file_no") or time_col_map.get("patient_id")
                 primary_file_col = col_map.get("file_no") or col_map.get("patient_id")
@@ -1514,54 +1588,55 @@ async def calculate_multi(
                 quarter_label = "Unknown"
             results = run_all_kpis(df_merged, quarter_label)
 
-        # ── OMC003 fallback: run independently on Time Data if merge failed ──
-        if time_merge_failed and df_time_standalone is not None:
-            omc003 = results.get("kpis", {}).get("OMC003", {})
-            if omc003.get("denominator", 0) == 0:
-                log.info("OMC003 fallback: running independently on Time Data file")
-                try:
-                    from engine.kpi_engine import calc_omc003 as _calc_omc003, map_columns as _map_cols
-                    time_cm = _map_cols(df_time_standalone)
-                    # Filter Time Data by quarter if applicable
-                    time_date_col = time_cm.get("date_of_service")
-                    df_time_for_calc = df_time_standalone
-                    if quarter and time_date_col:
-                        df_time_filtered = _filter_by_quarter(df_time_standalone, time_date_col, quarter)
-                        if len(df_time_filtered) > 0:
-                            df_time_for_calc = df_time_filtered
-                    omc003_result = _calc_omc003(df_time_for_calc, time_cm)
-                    omc003_dict = omc003_result.to_dict()
-                    if omc003_dict.get("denominator", 0) > 0:
-                        results["kpis"]["OMC003"] = omc003_dict
-                        merge_diagnostics.append(
-                            f"OMC003 calculated independently from Time Data: "
-                            f"{omc003_dict['numerator']}/{omc003_dict['denominator']} "
-                            f"({omc003_dict['percentage']}%)")
-                        log.info(f"OMC003 fallback success: {omc003_dict['numerator']}/{omc003_dict['denominator']}")
-                        # Recalculate jawda_summary since OMC003 changed
-                        kpi_vals = [v for k, v in results["kpis"].items() if not k.startswith("ERROR")]
-                        na_count = sum(1 for k in kpi_vals if k["status"] == "not_applicable")
-                        insuff = sum(1 for k in kpi_vals if k["status"] == "insufficient_data")
-                        calculable = [k for k in kpi_vals if k["status"] not in ("insufficient_data", "not_applicable")]
-                        meeting = [k for k in calculable if k.get("meets_target") is True]
-                        below = [k for k in calculable if k.get("meets_target") is False]
-                        proxy = [k for k in kpi_vals if k["status"] == "proxy"]
-                        results["jawda_summary"] = {
-                            "total_kpis": len(kpi_vals),
-                            "calculable": len(calculable),
-                            "meeting_target": len(meeting),
-                            "below_target": len(below),
-                            "missing_data": insuff,
-                            "not_applicable": na_count,
-                            "proxy_data": len(proxy),
-                            "readiness_pct": round(len(meeting) / len(calculable) * 100) if calculable else 0,
-                            "verdict": "ready" if len(calculable) > 0 and len(below) == 0 and insuff == 0
-                                       else "attention" if len(meeting) > 0
-                                       else "not_ready",
-                        }
-                except Exception as e:
-                    log.error(f"OMC003 fallback failed: {e}")
-                    merge_diagnostics.append(f"OMC003 standalone calculation failed: {str(e)[:100]}")
+        # ── OMC003: ALWAYS run on Time Data independently ──
+        # Time Data is the source of truth for wait times. Each row = 1 visit.
+        # Running on the merged dataframe inflates counts due to duplicate
+        # patient rows in KPI Excel (multiple visits per patient).
+        if df_time_standalone is not None:
+            log.info("OMC003: running on Time Data independently (source of truth)")
+            try:
+                from engine.kpi_engine import calc_omc003 as _calc_omc003, map_columns as _map_cols
+                time_cm = _map_cols(df_time_standalone)
+                time_date_col = time_cm.get("date_of_service")
+                df_time_for_calc = df_time_standalone
+                if quarter and time_date_col:
+                    df_time_filtered = _filter_by_quarter(df_time_standalone, time_date_col, quarter)
+                    if len(df_time_filtered) > 0:
+                        df_time_for_calc = df_time_filtered
+                omc003_result = _calc_omc003(df_time_for_calc, time_cm)
+                omc003_dict = omc003_result.to_dict()
+                if omc003_dict.get("denominator", 0) > 0:
+                    results["kpis"]["OMC003"] = omc003_dict
+                    merge_diagnostics.append(
+                        f"OMC003 calculated from Time Data ({len(df_time_for_calc)} visits): "
+                        f"{omc003_dict['numerator']}/{omc003_dict['denominator']} "
+                        f"({omc003_dict['percentage']}%)")
+                    log.info(f"OMC003 from Time Data: {omc003_dict['numerator']}/{omc003_dict['denominator']}")
+            except Exception as e:
+                log.error(f"OMC003 standalone failed: {e}")
+                merge_diagnostics.append(f"OMC003 standalone calculation failed: {str(e)[:100]}")
+
+        # Recalculate jawda_summary (OMC003 may have changed)
+        kpi_vals = [v for k, v in results["kpis"].items() if not k.startswith("ERROR")]
+        na_count = sum(1 for k in kpi_vals if k["status"] == "not_applicable")
+        insuff = sum(1 for k in kpi_vals if k["status"] == "insufficient_data")
+        calculable = [k for k in kpi_vals if k["status"] not in ("insufficient_data", "not_applicable")]
+        meeting = [k for k in calculable if k.get("meets_target") is True]
+        below = [k for k in calculable if k.get("meets_target") is False]
+        proxy = [k for k in kpi_vals if k["status"] == "proxy"]
+        results["jawda_summary"] = {
+            "total_kpis": len(kpi_vals),
+            "calculable": len(calculable),
+            "meeting_target": len(meeting),
+            "below_target": len(below),
+            "missing_data": insuff,
+            "not_applicable": na_count,
+            "proxy_data": len(proxy),
+            "readiness_pct": round(len(meeting) / len(calculable) * 100) if calculable else 0,
+            "verdict": "ready" if len(calculable) > 0 and len(below) == 0 and insuff == 0
+                       else "attention" if len(meeting) > 0
+                       else "not_ready",
+        }
 
         results["facility"] = facility_name
         results["files_used"] = list(paths.keys())

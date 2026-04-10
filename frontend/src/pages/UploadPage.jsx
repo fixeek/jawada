@@ -245,9 +245,35 @@ export default function UploadPage({ onResults, facility: facilityProp, existing
             </div>
           </div>
 
-          {/* Warnings */}
+          {/* ID Mismatch Errors */}
+          {(preview.id_warnings || []).filter(w => w.severity === 'error').length > 0 && (
+            <div className="bg-red-50 border border-red-200 rounded-xl p-4 mb-4 space-y-2">
+              <p className="text-xs font-bold text-red-800 uppercase tracking-wider">Data Quality Issues</p>
+              {preview.id_warnings.filter(w => w.severity === 'error').map((w, i) => (
+                <div key={i} className="flex items-start gap-2">
+                  <AlertCircle size={13} className="text-red-500 flex-shrink-0 mt-0.5" />
+                  <p className="text-xs text-red-700 font-medium">{w.message}</p>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Data Quality Warnings */}
+          {(preview.data_quality_warnings || []).length > 0 && (
+            <div className="bg-amber-50 border border-amber-100 rounded-xl p-4 mb-4 space-y-2">
+              <p className="text-xs font-bold text-amber-800 uppercase tracking-wider">Data Quality</p>
+              {preview.data_quality_warnings.map((w, i) => (
+                <div key={i} className="flex items-start gap-2">
+                  <AlertTriangle size={13} className="text-amber-500 flex-shrink-0 mt-0.5" />
+                  <p className="text-xs text-amber-800 font-medium">{w.message}</p>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* General Warnings */}
           {w.length > 0 && (
-            <div className="bg-amber-50 border border-amber-100 rounded-xl p-4 mb-6 space-y-1.5">
+            <div className="bg-amber-50/60 border border-amber-100 rounded-xl p-4 mb-6 space-y-1.5">
               {w.map((warning, i) => (
                 <div key={i} className="flex items-start gap-2">
                   <AlertTriangle size={13} className="text-amber-500 flex-shrink-0 mt-0.5" />
