@@ -648,7 +648,7 @@ function AuditTrail({ facility }) {
                   {entry.details && (
                     <div className="text-xs text-gray-600 space-y-1">
                       {entry.details.total_records && (
-                        <p>{entry.details.total_records.toLocaleString()} records processed · {entry.details.files_used?.join(', ')}</p>
+                        <p>{(entry.details.total_records || 0).toLocaleString()} records processed · {entry.details.files_used?.join(', ')}</p>
                       )}
                       {entry.details.verdict && (
                         <p>

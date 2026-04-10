@@ -100,7 +100,7 @@ export default function DataQuality({ quality }) {
             <div>
               <h3 className="font-bold text-navy-500 text-sm">Data Completeness</h3>
               <p className="text-xs text-gray-500 mt-1 font-medium">
-                {quality.total_rows.toLocaleString()} records — percentage of rows with each field populated
+                {(quality.total_rows || 0).toLocaleString()} records — percentage of rows with each field populated
               </p>
             </div>
             <div className="text-right">
