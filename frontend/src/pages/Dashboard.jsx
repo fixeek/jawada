@@ -1042,6 +1042,37 @@ export default function Dashboard({ results, onBack, onAudit }) {
           </div>
         )}
 
+        {/* Merge Diagnostics — show warnings if any merge had issues */}
+        {results.merge_diagnostics?.length > 0 && isLatest && (
+          <Collapsible title="Data Merge Report" icon={Layers}>
+            <div className="bg-white rounded-2xl border border-gray-100 shadow-card p-5 space-y-2">
+              {results.merge_diagnostics.map((msg, i) => {
+                const isWarning = msg.startsWith('WARNING')
+                const matchInfo = msg.match(/(\d+)\/(\d+) rows matched/)
+                const lowMatch = matchInfo && (parseInt(matchInfo[1]) / parseInt(matchInfo[2])) < 0.5
+                return (
+                  <div key={i} className={`flex items-start gap-3 text-xs rounded-xl px-4 py-3 ${
+                    isWarning ? 'bg-red-50 border border-red-100' :
+                    lowMatch ? 'bg-amber-50 border border-amber-100' :
+                    'bg-navy-50/30'
+                  }`}>
+                    {isWarning ? <AlertCircle size={13} className="text-red-500 flex-shrink-0 mt-0.5" /> :
+                     lowMatch ? <AlertTriangle size={13} className="text-amber-500 flex-shrink-0 mt-0.5" /> :
+                     <CheckCircle size={13} className="text-teal-500 flex-shrink-0 mt-0.5" />}
+                    <span className={`font-medium ${
+                      isWarning ? 'text-red-700' : lowMatch ? 'text-amber-800' : 'text-navy-500'
+                    }`}>{msg}</span>
+                  </div>
+                )
+              })}
+              <p className="text-[9px] text-gray-400 mt-2">
+                Low match rates may indicate different ID formats between files.
+                Re-export files ensuring MRN / File No formats are consistent.
+              </p>
+            </div>
+          </Collapsible>
+        )}
+
         {/* Errors */}
         {errorEntries.length > 0 && (
           <div className="mt-6 bg-red-50 border border-red-100 rounded-2xl p-5">

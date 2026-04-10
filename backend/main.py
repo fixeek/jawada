@@ -1183,32 +1183,105 @@ async def calculate_multi(
         df_merged = normalise_df(df_primary)
         col_map = map_columns(df_merged)
         pid_col = col_map.get("patient_id")
+        merge_diagnostics = []
 
-        # Merge Time Data if available (adds wait time columns)
-        # Time Data uses FILE NO as join key (not MRN)
+        def _normalize_join_key(series):
+            """Normalize join keys: strip, lowercase, remove leading zeros."""
+            return series.astype(str).str.strip().str.lower().str.lstrip('0').replace('', 'EMPTY')
+
+        def _try_join(df_left, df_right, left_col, right_col, value_cols, label):
+            """Try to join and return (merged_df, match_count, total).
+            Tries exact match first, then normalized match."""
+            total = len(df_left)
+
+            # Strategy 1: exact string match
+            right_sub = df_right[[right_col] + value_cols].copy()
+            right_sub[right_col] = right_sub[right_col].astype(str).str.strip()
+            df_left[left_col] = df_left[left_col].astype(str).str.strip()
+            right_sub = right_sub.rename(columns={right_col: left_col})
+            right_sub = right_sub.drop_duplicates(subset=[left_col], keep='first')
+            merged = df_left.merge(right_sub, on=left_col, how='left', suffixes=('', f'_{label}'))
+            matched = sum(merged[value_cols[0]].notna()) if value_cols[0] in merged.columns else 0
+
+            if matched > total * 0.3:  # >30% match = good enough
+                return merged, matched, total
+
+            # Strategy 2: normalized keys (strip zeros, lowercase)
+            log.info(f"  {label}: exact match {matched}/{total}, trying normalized keys...")
+            df_left_copy = df_left.drop(columns=[c for c in value_cols if c in df_left.columns], errors='ignore')
+            right_sub2 = df_right[[right_col] + value_cols].copy()
+            join_key = f'_norm_join_{label}'
+            df_left_copy[join_key] = _normalize_join_key(df_left_copy[left_col])
+            right_sub2[join_key] = _normalize_join_key(right_sub2[right_col])
+            right_sub2 = right_sub2.drop(columns=[right_col])
+            right_sub2 = right_sub2.drop_duplicates(subset=[join_key], keep='first')
+            merged2 = df_left_copy.merge(right_sub2, on=join_key, how='left', suffixes=('', f'_{label}'))
+            matched2 = sum(merged2[value_cols[0]].notna()) if value_cols[0] in merged2.columns else 0
+            merged2 = merged2.drop(columns=[join_key], errors='ignore')
+
+            if matched2 > matched:
+                log.info(f"  {label}: normalized match improved {matched} → {matched2}/{total}")
+                return merged2, matched2, total
+
+            return merged, matched, total
+
+        # ── Merge Time Data ─────────────────────────────────────────────
         if "time_data" in paths and "time_data" != primary_slot:
             df_time = load_file(paths["time_data"])
             df_time_norm = normalise_df(df_time)
             time_col_map = map_columns(df_time_norm)
             wait_col = time_col_map.get("wait_minutes")
-            time_file_col = time_col_map.get("file_no") or time_col_map.get("patient_id")
-            primary_file_col = col_map.get("file_no")
+            reg_col = time_col_map.get("registration_ts")
+            consult_col = time_col_map.get("consult_ts")
 
-            if wait_col:
+            # Collect all useful time columns
+            time_value_cols = [c for c in [wait_col, reg_col, consult_col] if c]
+
+            if time_value_cols:
+                time_file_col = time_col_map.get("file_no") or time_col_map.get("patient_id")
+                primary_file_col = col_map.get("file_no") or col_map.get("patient_id")
+
+                matched = 0
                 if len(df_time_norm) == len(df_merged):
-                    # Same row count = same order, just copy the column
-                    df_merged[wait_col] = df_time_norm[wait_col].values
+                    # Same row count = likely same order, copy columns directly
+                    for vc in time_value_cols:
+                        df_merged[vc] = df_time_norm[vc].values
+                    matched = len(df_merged)
+                    merge_diagnostics.append(f"Time Data: {matched} rows copied directly (same row count)")
                 elif time_file_col and primary_file_col:
-                    # Join by FILE NO
-                    time_subset = df_time_norm[[time_file_col, wait_col]].copy()
-                    time_subset[time_file_col] = time_subset[time_file_col].astype(str)
-                    df_merged[primary_file_col] = df_merged[primary_file_col].astype(str)
-                    time_subset = time_subset.rename(columns={time_file_col: primary_file_col})
-                    time_subset = time_subset.drop_duplicates(subset=[primary_file_col], keep='first')
-                    df_merged = df_merged.merge(time_subset, on=primary_file_col, how='left', suffixes=('', '_time'))
+                    df_merged, matched, total = _try_join(
+                        df_merged, df_time_norm, primary_file_col, time_file_col, time_value_cols, 'time')
+                    merge_diagnostics.append(f"Time Data: {matched}/{total} rows matched on {primary_file_col}")
 
-        # Merge Visit Details if available — bring ICD, flags, BP, BMI, drugs
-        # Visit Details uses MRN as join key (same as KPI Excel MRN NO.)
+                    # Strategy 3: if join failed badly, try using patient_id instead of file_no
+                    if matched < len(df_merged) * 0.1 and pid_col and pid_col != primary_file_col:
+                        alt_time_col = time_col_map.get("patient_id")
+                        if alt_time_col and alt_time_col != time_file_col:
+                            log.info(f"  Time Data: trying alt join key patient_id ({alt_time_col})")
+                            # Remove previous failed merge columns
+                            for vc in time_value_cols:
+                                df_merged = df_merged.drop(columns=[vc], errors='ignore')
+                            df_merged, matched2, total = _try_join(
+                                df_merged, df_time_norm, pid_col, alt_time_col, time_value_cols, 'time')
+                            if matched2 > matched:
+                                matched = matched2
+                                merge_diagnostics[-1] = f"Time Data: {matched}/{total} rows matched on {pid_col} (fallback)"
+
+                    # Strategy 4: if still no match and row counts are close, try index-based copy
+                    if matched < len(df_merged) * 0.1 and abs(len(df_time_norm) - len(df_merged)) < len(df_merged) * 0.05:
+                        log.info(f"  Time Data: join failed, row counts close ({len(df_time_norm)} vs {len(df_merged)}), using index copy")
+                        min_rows = min(len(df_time_norm), len(df_merged))
+                        for vc in time_value_cols:
+                            df_merged = df_merged.drop(columns=[vc], errors='ignore')
+                            df_merged.loc[:min_rows-1, vc] = df_time_norm[vc].values[:min_rows]
+                        matched = min_rows
+                        merge_diagnostics[-1] = f"Time Data: {matched} rows copied by index (row counts close, join keys didn't match)"
+                else:
+                    merge_diagnostics.append("Time Data: no join key found, skipped")
+            else:
+                merge_diagnostics.append("Time Data: no wait time or timestamp columns found")
+
+        # ── Merge Visit Details ─────────────────────────────────────────
         if "visit_details" in paths and "visit_details" != primary_slot:
             df_visit = load_file(paths["visit_details"])
             df_visit_norm = normalise_df(df_visit)
@@ -1216,23 +1289,64 @@ async def calculate_multi(
             visit_pid = visit_col_map.get("patient_id")
 
             if visit_pid and pid_col:
-                cols_to_bring = [visit_pid]
+                cols_to_bring = []
                 for field_key in ["icd_code", "icd_secondary", "diabetes_flag", "htn_flag",
-                                  "pregnancy", "bp_reading", "bmi", "hba1c", "drug_name"]:
+                                  "pregnancy", "bp_reading", "bmi", "hba1c", "drug_name",
+                                  "drug_class", "days_supplied", "egfr", "uacr"]:
                     col = visit_col_map.get(field_key)
                     if col and col != visit_pid and col not in cols_to_bring:
-                        cols_to_bring.append(col)
+                        # Don't overwrite columns that already exist in primary
+                        if col not in df_merged.columns:
+                            cols_to_bring.append(col)
 
-                if len(cols_to_bring) > 1:
-                    visit_subset = df_visit_norm[cols_to_bring].copy()
-                    visit_subset[visit_pid] = visit_subset[visit_pid].astype(str)
-                    df_merged[pid_col] = df_merged[pid_col].astype(str)
-                    visit_subset = visit_subset.rename(columns={visit_pid: pid_col})
-                    visit_subset = visit_subset.drop_duplicates(subset=[pid_col], keep='first')
-                    df_merged = df_merged.merge(visit_subset, on=pid_col, how='left', suffixes=('', '_visit'))
+                if cols_to_bring:
+                    df_merged, matched, total = _try_join(
+                        df_merged, df_visit_norm, pid_col, visit_pid, cols_to_bring, 'visit')
+                    merge_diagnostics.append(f"Visit Details: {matched}/{total} rows matched, {len(cols_to_bring)} columns added")
+                else:
+                    merge_diagnostics.append("Visit Details: no new columns to add (all already in primary)")
+            else:
+                merge_diagnostics.append("Visit Details: no patient ID column found for join")
+
+        # ── Merge E-Claims (if it has useful columns not already present) ──
+        if "eclaims" in paths and "eclaims" != primary_slot:
+            df_eclaims = load_file(paths["eclaims"])
+            df_eclaims_norm = normalise_df(df_eclaims)
+            eclaims_col_map = map_columns(df_eclaims_norm)
+            eclaims_pid = eclaims_col_map.get("patient_id")
+
+            if eclaims_pid and pid_col:
+                eclaims_cols = []
+                for field_key in ["age", "date_of_birth", "gender", "visit_type"]:
+                    col = eclaims_col_map.get(field_key)
+                    if col and col != eclaims_pid and col not in eclaims_cols:
+                        if col not in df_merged.columns:
+                            eclaims_cols.append(col)
+
+                if eclaims_cols:
+                    df_merged, matched, total = _try_join(
+                        df_merged, df_eclaims_norm, pid_col, eclaims_pid, eclaims_cols, 'eclaims')
+                    merge_diagnostics.append(f"E-Claims: {matched}/{total} rows matched, {len(eclaims_cols)} columns added")
 
         # Re-map columns after merge (new columns may be available now)
         col_map = map_columns(df_merged)
+
+        # ── Post-merge validation ───────────────────────────────────────
+        # Check critical columns — warn if they exist but are all NaN
+        critical_checks = [
+            ("wait_minutes", "OMC003 (wait time)"),
+            ("hba1c", "OMC005 (diabetes HbA1c)"),
+            ("egfr", "OMC008 (kidney eGFR)"),
+        ]
+        for field, kpi_label in critical_checks:
+            col = col_map.get(field)
+            if col and col in df_merged.columns:
+                non_null = df_merged[col].notna().sum()
+                if non_null == 0:
+                    merge_diagnostics.append(f"WARNING: {field} column exists but has no data after merge — {kpi_label} will show 0/0")
+                    log.warning(f"Post-merge: {field} column all NaN — {kpi_label} affected")
+
+        log.info(f"Merge diagnostics: {merge_diagnostics}")
 
         # Filter by quarter if specified
         date_col = col_map.get("date_of_service")
@@ -1252,6 +1366,7 @@ async def calculate_multi(
 
         results["facility"] = facility_name
         results["files_used"] = list(paths.keys())
+        results["merge_diagnostics"] = merge_diagnostics
 
         # Save current quarter to history
         _save_to_history(facility_name, results.get("quarter", "Unknown"), results)
