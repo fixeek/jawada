@@ -84,6 +84,22 @@ ANTIBIOTIC_DRUGS = [
     "fosfomycin","nitrofurantoin","trimethoprim",
 ]
 
+# OMC002: Competing diagnosis exclusions — patients with these concurrent diagnoses
+# are excluded because antibiotics may be clinically justified
+BRONCHITIS_COMPETING_ICD = [
+    "J02", "J03",       # Pharyngitis, tonsillitis
+    "J01",              # Acute sinusitis
+    "J06",              # Upper respiratory infection (multi-site)
+    "J31", "J32",       # Chronic rhinitis/sinusitis
+    "J36",              # Peritonsillar abscess
+    "J39",              # Other upper respiratory diseases
+    "H66", "H67",       # Otitis media
+    "N39.0",            # Urinary tract infection
+    "L01", "L02", "L03", # Skin infections
+    "A46",              # Erysipelas
+    "J13", "J14", "J15", "J16", "J18",  # Pneumonia
+]
+
 HYPERTENSION_ICD_PREFIX = ["I10","I11","I12","I13"]
 # OMC006 denominator exclusions
 HTN_EXCLUSION_ICD = [
@@ -541,12 +557,13 @@ def map_columns(df: pd.DataFrame) -> Dict[str, Optional[str]]:
 # DOH JAWDA v1.4 TARGETS
 # ─────────────────────────────────────────────────────────────────────────────
 
+# DOH Jawda Guidance V2 2026 — Official targets and domains
 DOH_TARGETS = {
     "OMC001": {"target": 50.0, "direction": "higher", "domain": "Effectiveness",       "label": "Asthma controller ratio >= 50%"},
     "OMC002": {"target": 50.0, "direction": "higher", "domain": "Safety",              "label": "Patients NOT given antibiotics >= 50%"},
     "OMC003": {"target": 80.0, "direction": "higher", "domain": "Timeliness",          "label": "Seen within 60 min >= 80%"},
     "OMC004": {"target": 50.0, "direction": "higher", "domain": "Patient-Centredness", "label": "BMI counselling plan >= 50%"},
-    "OMC005": {"target": 36.0, "direction": "higher", "domain": "Effectiveness",       "label": "HbA1c <= 8.0% >= 36%"},  # V2: threshold 8.0%, DOH target >36%
+    "OMC005": {"target": 36.0, "direction": "higher", "domain": "Effectiveness",       "label": "HbA1c <= 8.0% >= 36%"},
     "OMC006": {"target": 50.0, "direction": "higher", "domain": "Effectiveness",       "label": "BP controlled < 130/80 >= 50%"},
     "OMC007": {"target": 10.0, "direction": "lower",  "domain": "Coordination",        "label": "Opioid risk rate <= 10%"},
     "OMC008": {"target": 50.0, "direction": "higher", "domain": "Effectiveness",       "label": "eGFR + uACR monitored >= 50%"},
@@ -691,11 +708,12 @@ def calc_omc001(df: pd.DataFrame, col_map: dict) -> KPIResult:
 
 def calc_omc002(df: pd.DataFrame, col_map: dict) -> KPIResult:
     r = KPIResult("OMC002", "Avoidance of Antibiotics for Acute Bronchitis")
-    r.notes.append("Requires ICD-10 bronchitis diagnosis and prescription data within 3 days of visit.")
+    r.notes.append("DOH V2: patients with acute bronchitis who were NOT prescribed antibiotics within 3 days.")
 
     has_icd  = col_map.get("icd_code") or col_map.get("icd_secondary")
     age_col  = col_map.get("age")
     drug_col = col_map.get("drug_name")
+    date_col = col_map.get("date_of_service")
 
     if not has_icd:
         r.status = "insufficient_data"
@@ -707,25 +725,84 @@ def calc_omc002(df: pd.DataFrame, col_map: dict) -> KPIResult:
     if r.status == "insufficient_data":
         return r
 
-    # Per-patient: if any visit has bronchitis, check if ANY visit had antibiotic
-    from collections import defaultdict
-    patient_bronchitis = {}  # pid -> {"has_antibiotic": bool, "drug": str}
-    for _, row in df.iterrows():
+    # Step 1: Find bronchitis visits, excluding patients with competing diagnoses
+    bronchitis_visits = []  # list of (pid, visit_date, row_index)
+    competing_patients = set()  # patients with concurrent diagnoses that justify antibiotics
+
+    for idx, row in df.iterrows():
+        pid = str(row.get(col_map.get("patient_id",""), idx))
+
+        # Check for competing diagnoses (pharyngitis, sinusitis, pneumonia, etc.)
+        if row_icd_matches(row, col_map, BRONCHITIS_COMPETING_ICD):
+            competing_patients.add(pid)
+            continue
+
         age = safe_age(row.get(age_col, "")) if age_col else None
         if age is not None and age < 0.25:  # 3 months minimum
             continue
         if not row_icd_exact(row, col_map, BRONCHITIS_ICD):
             continue
-        pid = str(row.get(col_map.get("patient_id",""), row.name))
-        drug = str(row.get(drug_col, "")).strip()
-        is_antibiotic = drug_matches(drug, ANTIBIOTIC_DRUGS) if drug else False
-        if pid not in patient_bronchitis:
-            patient_bronchitis[pid] = {"has_antibiotic": False, "drug": drug or "none"}
-        if is_antibiotic:
-            patient_bronchitis[pid]["has_antibiotic"] = True
-            patient_bronchitis[pid]["drug"] = drug
 
-    for pid, info in patient_bronchitis.items():
+        visit_date = None
+        if date_col:
+            try:
+                visit_date = pd.to_datetime(row.get(date_col), dayfirst=True)
+            except:
+                pass
+        bronchitis_visits.append((pid, visit_date, idx))
+
+    # Step 2: For each bronchitis patient, check antibiotics within 3 days
+    # Build a drug lookup: for each patient, all (date, drug) pairs
+    patient_drugs = {}
+    for idx, row in df.iterrows():
+        pid = str(row.get(col_map.get("patient_id",""), idx))
+        drug = str(row.get(drug_col, "")).strip()
+        if not drug or drug.lower() in ["", "nan", "none"]:
+            continue
+        drug_date = None
+        if date_col:
+            try:
+                drug_date = pd.to_datetime(row.get(date_col), dayfirst=True)
+            except:
+                pass
+        if pid not in patient_drugs:
+            patient_drugs[pid] = []
+        patient_drugs[pid].append((drug_date, drug))
+
+    # Step 3: Per unique patient — check if they got antibiotics within 3 days of bronchitis visit
+    patient_results = {}
+    for pid, visit_date, _ in bronchitis_visits:
+        if pid in competing_patients:
+            continue  # Exclude patients with competing diagnoses
+        if pid in patient_results:
+            continue  # Already counted this patient
+
+        has_antibiotic = False
+        antibiotic_drug = "none"
+        for drug_date, drug in patient_drugs.get(pid, []):
+            is_antibiotic = drug_matches(drug, ANTIBIOTIC_DRUGS)
+            if not is_antibiotic:
+                continue
+            # If we have dates, check 3-day window
+            if visit_date and drug_date:
+                day_diff = abs((drug_date - visit_date).days)
+                if day_diff <= 3:
+                    has_antibiotic = True
+                    antibiotic_drug = drug
+                    break
+            else:
+                # No dates available — conservatively count any antibiotic on this patient
+                has_antibiotic = True
+                antibiotic_drug = drug
+                break
+
+        patient_results[pid] = {"has_antibiotic": has_antibiotic, "drug": antibiotic_drug}
+
+    if competing_patients:
+        r.notes.append(f"{len(competing_patients)} patients excluded due to competing diagnoses "
+                       "(pharyngitis, sinusitis, pneumonia, etc.) that justify antibiotic use.")
+
+    for pid, info in patient_results.items():
         r.denominator += 1
         if not info["has_antibiotic"]:
             r.numerator += 1
@@ -817,6 +894,8 @@ def calc_omc004(df: pd.DataFrame, col_map: dict) -> KPIResult:
         r.missing_fields.append("Management plan documentation (physician screen required)")
         r.notes.append("Official OMC004 numerator requires documented management plan every 6 months. "
                        "Without physician screen, this is a proxy count only.")
+        r.notes.append("DOH requires patients to have visited in last 12 months — all patients in the "
+                       "uploaded quarter data satisfy this by definition.")
 
     seen_patients = set()
 
@@ -1131,6 +1210,7 @@ def calc_omc007(df: pd.DataFrame, col_map: dict) -> KPIResult:
     age_col    = col_map.get("age")
     days_col   = col_map.get("days_supplied")
     drug_col   = col_map.get("drug_name")
+    date_col   = col_map.get("date_of_service")
 
     if not opioid_col and not drug_col:
         r.status = "insufficient_data"
@@ -1139,12 +1219,13 @@ def calc_omc007(df: pd.DataFrame, col_map: dict) -> KPIResult:
 
     if not days_col:
         r.missing_fields.append("Days supplied (required for 15/30 and 31/62 day threshold logic)")
-        r.notes.append("Proxy mode: counting patients with any opioid prescription as new opioid users. "
+        r.notes.append("Proxy mode: counting patients with any opioid prescription. "
                        "Official OMC007 requires days-supplied to calculate 15/30 and 31/62 day rates.")
         r.status = "proxy"
 
     from collections import defaultdict
     patient_days = defaultdict(int)
+    patient_first_opioid_date = {}  # pid -> earliest opioid date in dataset
     opioid_patients = set()
     drug_class_col = col_map.get("drug_class")
 
@@ -1175,6 +1256,16 @@ def calc_omc007(df: pd.DataFrame, col_map: dict) -> KPIResult:
 
         opioid_patients.add(pid)
 
+        # Track earliest opioid date per patient (for new-start detection)
+        if date_col:
+            try:
+                visit_date = pd.to_datetime(row.get(date_col), dayfirst=True)
+                if pd.notna(visit_date):
+                    if pid not in patient_first_opioid_date or visit_date < patient_first_opioid_date[pid]:
+                        patient_first_opioid_date[pid] = visit_date
+            except:
+                pass
+
         if days_col:
             try:
                 days = int(row.get(days_col, 0))
@@ -1182,18 +1273,39 @@ def calc_omc007(df: pd.DataFrame, col_map: dict) -> KPIResult:
             except:
                 pass
 
-    # Denominator: unique patients with opioid prescriptions
-    r.denominator = len(opioid_patients)
+    # DOH V2: denominator is NEW opioid users (no opioid in prior 60 days)
+    # Best effort: if data spans >60 days, only count patients whose first opioid
+    # date in the dataset is within the reporting quarter (not in the lookback period)
+    new_opioid_patients = opioid_patients
+    if date_col and patient_first_opioid_date:
+        try:
+            all_opioid_dates = list(patient_first_opioid_date.values())
+            data_start = min(all_opioid_dates)
+            data_end = max(all_opioid_dates)
+            data_span = (data_end - data_start).days
+            if data_span > 60:
+                lookback_cutoff = data_start + pd.DateOffset(days=60)
+                new_starts = {pid for pid, d in patient_first_opioid_date.items() if d >= lookback_cutoff}
+                if new_starts:
+                    r.notes.append(f"New-start filter: {len(new_starts)} of {len(opioid_patients)} "
+                                   f"opioid patients are new starts (first opioid after 60-day lookback).")
+                    new_opioid_patients = new_starts
+                else:
+                    r.notes.append("New-start filter: all opioid patients appear in the lookback period. "
+                                   "Using all patients as denominator.")
+            else:
+                r.notes.append(f"Data spans {data_span} days (<60) — cannot apply new-start filter. "
+                               "All opioid patients included in denominator.")
+        except:
+            pass
 
-    if days_col and opioid_patients:
-        # Rate 1: >= 15 days in 30-day period
-        at_risk_30 = sum(1 for pid in opioid_patients if patient_days.get(pid, 0) >= OPIOID_DAYS_30)
-        # Rate 2: >= 31 days in 62-day period (use total days as proxy for window)
-        at_risk_62 = sum(1 for pid in opioid_patients if patient_days.get(pid, 0) >= OPIOID_DAYS_62)
-        # Use the higher of the two rates (more conservative)
+    r.denominator = len(new_opioid_patients)
+
+    if days_col and new_opioid_patients:
+        at_risk_30 = sum(1 for pid in new_opioid_patients if patient_days.get(pid, 0) >= OPIOID_DAYS_30)
+        at_risk_62 = sum(1 for pid in new_opioid_patients if patient_days.get(pid, 0) >= OPIOID_DAYS_62)
         r.numerator = max(at_risk_30, at_risk_62)
-    elif opioid_patients:
-        # Proxy: all opioid patients flagged
+    elif new_opioid_patients:
         r.numerator = r.denominator
 
     r.calculate_percentage()
