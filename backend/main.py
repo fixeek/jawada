@@ -1222,8 +1222,12 @@ async def calculate_multi(
         merge_diagnostics = []
 
         def _normalize_join_key(series):
-            """Normalize join keys: strip, lowercase, remove leading zeros."""
-            return series.astype(str).str.strip().str.lower().str.lstrip('0').replace('', 'EMPTY')
+            """Normalize join keys: strip, lowercase, remove leading zeros, remove .0 suffix."""
+            return (series.astype(str).str.strip()
+                    .str.replace(r'\.0$', '', regex=True)  # 156.0 → 156
+                    .str.lower()
+                    .str.lstrip('0')
+                    .replace('', 'EMPTY'))
 
         def _try_join(df_left, df_right, left_col, right_col, value_cols, label):
             """Try to join and return (merged_df, match_count, total).
@@ -1298,23 +1302,47 @@ async def calculate_multi(
 
                 matched = 0
                 if time_file_col and primary_file_col:
-                    # Strategy 1+2: exact then normalized join on file_no
+                    # Strategy 1+2: exact then normalized join on file_no→file_no
                     df_merged, matched, total = _try_join(
                         df_merged, df_time_norm, primary_file_col, time_file_col, time_value_cols, 'time')
                     merge_diagnostics.append(f"Time Data: {matched}/{total} rows matched on {primary_file_col}")
 
-                    # Strategy 3: if join failed, try patient_id as alternate key
+                    # Strategy 3: try time's file_no against primary's patient_id (MRN)
                     if matched < len(df_merged) * 0.1 and pid_col and pid_col != primary_file_col:
+                        log.info(f"  Time Data: trying time file_no → primary patient_id ({pid_col})")
+                        for vc in time_value_cols:
+                            df_merged = df_merged.drop(columns=[vc], errors='ignore')
+                        df_merged, matched2, total = _try_join(
+                            df_merged, df_time_norm, pid_col, time_file_col, time_value_cols, 'time')
+                        if matched2 > matched:
+                            matched = matched2
+                            merge_diagnostics[-1] = f"Time Data: {matched}/{total} rows matched on {pid_col} (time file_no→primary MRN)"
+
+                    # Strategy 4: try time's patient_id against primary's file_no
+                    if matched < len(df_merged) * 0.1:
                         alt_time_col = time_col_map.get("patient_id")
                         if alt_time_col and alt_time_col != time_file_col:
-                            log.info(f"  Time Data: trying alt join key patient_id ({alt_time_col})")
+                            log.info(f"  Time Data: trying time patient_id → primary file_no ({primary_file_col})")
                             for vc in time_value_cols:
                                 df_merged = df_merged.drop(columns=[vc], errors='ignore')
-                            df_merged, matched2, total = _try_join(
+                            df_merged, matched3, total = _try_join(
+                                df_merged, df_time_norm, primary_file_col, alt_time_col, time_value_cols, 'time')
+                            if matched3 > matched:
+                                matched = matched3
+                                merge_diagnostics[-1] = f"Time Data: {matched}/{total} rows matched on {primary_file_col} (time MRN→primary file_no)"
+
+                    # Strategy 5: try time's patient_id against primary's patient_id
+                    if matched < len(df_merged) * 0.1:
+                        alt_time_col = time_col_map.get("patient_id")
+                        if alt_time_col and alt_time_col != time_file_col and pid_col:
+                            log.info(f"  Time Data: trying time patient_id → primary patient_id ({pid_col})")
+                            for vc in time_value_cols:
+                                df_merged = df_merged.drop(columns=[vc], errors='ignore')
+                            df_merged, matched4, total = _try_join(
                                 df_merged, df_time_norm, pid_col, alt_time_col, time_value_cols, 'time')
-                            if matched2 > matched:
-                                matched = matched2
-                                merge_diagnostics[-1] = f"Time Data: {matched}/{total} rows matched on {pid_col} (fallback)"
+                            if matched4 > matched:
+                                matched = matched4
+                                merge_diagnostics[-1] = f"Time Data: {matched}/{total} rows matched on {pid_col} (MRN→MRN)"
 
                     if matched < len(df_merged) * 0.1:
                         merge_diagnostics[-1] += " — WARNING: very low match rate, check ID formats"
