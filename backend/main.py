@@ -799,6 +799,29 @@ def email_report(quarter: str = Form(...), user: dict = Depends(get_current_user
         raise HTTPException(500, f"Email failed: {str(e)}")
 
 
+@app.get("/api/clinic/recommendations")
+def clinic_recommendations(user: dict = Depends(get_current_user)):
+    """Get smart recommendations and predictions for the clinic."""
+    facility_id = user.get("facility_id")
+    if not facility_id:
+        return {"recommendations": [], "predictions": []}
+    try:
+        history = get_facility_history_by_id(facility_id) if USE_DB else {}
+        quarters = sorted(history.keys())
+        if not quarters:
+            return {"recommendations": [], "predictions": []}
+        latest_q = quarters[-1]
+        kpis = history[latest_q].get("kpis", {})
+        summary = history[latest_q].get("jawda_summary", {})
+        from recommendations import generate_recommendations, generate_predictions
+        recs = generate_recommendations(kpis, summary)
+        preds = generate_predictions(history) if len(quarters) > 1 else []
+        return {"recommendations": recs, "predictions": preds}
+    except Exception as e:
+        log.error(f"Recommendations endpoint failed: {e}")
+        return {"recommendations": [], "predictions": []}
+
+
 @app.get("/api/clinic/doctors")
 def clinic_doctors(user: dict = Depends(get_current_user)):
     """Get doctor breakdown from the latest calculation."""
@@ -2102,6 +2125,20 @@ async def calculate_multi(
         results["facility"] = facility_name
         results["files_used"] = list(paths.keys())
         results["merge_diagnostics"] = merge_diagnostics
+
+        # Generate smart recommendations
+        try:
+            from recommendations import generate_recommendations, generate_predictions
+            results["recommendations"] = generate_recommendations(results.get("kpis", {}), results.get("jawda_summary", {}))
+            # Predictions need history
+            if results.get("history"):
+                results["predictions"] = generate_predictions(results["history"])
+            else:
+                results["predictions"] = []
+        except Exception as e:
+            log.error(f"Recommendations/predictions failed: {e}")
+            results["recommendations"] = []
+            results["predictions"] = []
 
         # If user provided custom column mapping, force-save as clinic default
         if user_col_mapping and user.get("facility_id") and USE_DB:

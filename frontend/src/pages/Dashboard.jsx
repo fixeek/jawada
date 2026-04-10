@@ -13,6 +13,7 @@ import TrendChart from '../components/TrendChart'
 import ComplianceCalendar from '../components/ComplianceCalendar'
 import DoctorBreakdown from '../components/DoctorBreakdown'
 import DataQualityTrend from '../components/DataQualityTrend'
+import SmartRecommendations from '../components/SmartRecommendations'
 
 const SUBMIT_BASE = import.meta.env.VITE_API_URL || ''
 
@@ -1048,6 +1049,13 @@ export default function Dashboard({ results, onBack, onAudit }) {
           prevQ={prevQ}
           prevData={prevData}
         />
+
+        {/* Smart Recommendations */}
+        {results.recommendations?.length > 0 && isLatest && (
+          <div className="mt-8">
+            <SmartRecommendations recommendations={results.recommendations} />
+          </div>
+        )}
 
         {/* Action Plan — only for the latest quarter (past quarters can't be fixed) */}
         {isLatest ? (
