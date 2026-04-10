@@ -74,14 +74,11 @@ function Sidebar({ active, onNavigate, collapsed, onCollapse, user, onLogout }) 
             <div className="text-navy-300 text-[9px] font-medium tracking-wide uppercase">by TriZodiac</div>
           </div>
         )}
-        <div className="flex items-center gap-1 flex-shrink-0">
-          <LanguageSwitcher />
-          {!isSuperAdmin(user) && (
-            <div className="[&_button]:text-navy-300 [&_button:hover]:text-white [&_button:hover]:bg-white/10">
-              <NotificationBell />
-            </div>
-          )}
-        </div>
+        {!isSuperAdmin(user) && !collapsed && (
+          <div className="flex-shrink-0 [&_button]:text-navy-300 [&_button:hover]:text-white [&_button:hover]:bg-white/10">
+            <NotificationBell />
+          </div>
+        )}
       </div>
 
       {/* Facility badge */}
@@ -147,8 +144,11 @@ function Sidebar({ active, onNavigate, collapsed, onCollapse, user, onLogout }) 
         })()}
       </nav>
 
-      {/* User info + logout */}
+      {/* Language + User info + logout */}
       <div className="px-3 py-4 border-t border-white/5 space-y-2">
+        <div className="px-1 pb-1">
+          <LanguageSwitcher />
+        </div>
         {!collapsed && user && (
           <div className="px-3 py-2">
             <div className="flex items-center gap-2 mb-1">
