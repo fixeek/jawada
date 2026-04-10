@@ -295,7 +295,7 @@ export default function KPIModal({ data, onClose }) {
 
           {/* Official definition */}
           <div className="bg-gradient-to-br from-navy-50/60 to-teal-50/20 rounded-2xl p-6 border border-navy-100/30">
-            <h4 className="text-[11px] font-black text-navy-500 uppercase tracking-widest mb-4">Official DOH v1.4 Definition</h4>
+            <h4 className="text-[11px] font-black text-navy-500 uppercase tracking-widest mb-4">Official DOH V2 2026 Definition</h4>
             <div className="space-y-4">
               {[
                 { icon: Target, label: 'Target', value: def.threshold },

@@ -8,8 +8,8 @@ const DOMAIN_STYLE = {
 
 function GaugeArc({ pct, status, target, direction }) {
   const r = 40, circumference = Math.PI * r
-  const filled = (pct / 100) * circumference
-  const isInsufficient = status === 'insufficient_data'
+  const noData = status === 'insufficient_data' || status === 'not_applicable'
+  const filled = noData ? 0 : (pct / 100) * circumference
 
   // Target tick position on the arc
   const targetAngle = (target / 100) * Math.PI
@@ -30,19 +30,20 @@ function GaugeArc({ pct, status, target, direction }) {
       </defs>
       {/* Track */}
       <path d={`M6 48 A${r} ${r} 0 0 1 90 48`}
-        fill="none" stroke={isInsufficient ? '#F3F4F6' : '#E5E7EB'} strokeWidth="5" strokeLinecap="round" />
+        fill="none" stroke={noData ? '#F3F4F6' : '#E5E7EB'} strokeWidth="5" strokeLinecap="round" />
       {/* Filled arc */}
-      <path d={`M6 48 A${r} ${r} 0 0 1 90 48`}
+      {!noData && <path d={`M6 48 A${r} ${r} 0 0 1 90 48`}
         fill="none" stroke={`url(#${gradientId})`} strokeWidth="5"
         strokeLinecap="round" strokeDasharray={`${filled} ${circumference}`}
-        style={{ transition: 'stroke-dasharray 1s cubic-bezier(0.16,1,0.3,1)' }} />
+        style={{ transition: 'stroke-dasharray 1s cubic-bezier(0.16,1,0.3,1)' }} />}
       {/* Target tick mark */}
-      {!isInsufficient && target > 0 && target < 100 && (
+      {!noData && target > 0 && target < 100 && (
         <circle cx={tickX} cy={tickY} r="2.5" fill="#0D2137" opacity="0.4" />
       )}
       {/* Percentage text */}
-      <text x="48" y="46" textAnchor="middle" fontSize="15" fontWeight="800" fill="#0D2137" letterSpacing="-0.5">
-        {isInsufficient ? '—' : `${pct}%`}
+      <text x="48" y="46" textAnchor="middle" fontSize="15" fontWeight="800"
+        fill={noData ? '#9CA3AF' : '#0D2137'} letterSpacing="-0.5">
+        {noData ? (status === 'not_applicable' ? 'N/A' : '—') : `${pct}%`}
       </text>
     </svg>
   )

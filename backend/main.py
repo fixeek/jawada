@@ -217,18 +217,30 @@ def _save_to_history(facility: str, quarter: str, results: dict):
     }
 
 
+def _safe_to_datetime(val):
+    """Convert a value to datetime, handling both already-parsed Timestamps and strings.
+    Uses dayfirst=True for strings (UAE standard DD/MM/YYYY)."""
+    if isinstance(val, pd.Timestamp):
+        return val
+    if isinstance(val, datetime):
+        return pd.Timestamp(val)
+    try:
+        return pd.to_datetime(val, dayfirst=True)
+    except:
+        return None
+
+
 def _detect_quarters(df: pd.DataFrame, date_col: str) -> list:
     """Detect which quarters are present in a date column."""
     quarters = {}
     for val in df[date_col].dropna():
-        try:
-            dt = pd.to_datetime(val)
-            q_label = f"Q{(dt.month - 1) // 3 + 1} {dt.year}"
-            quarters[q_label] = quarters.get(q_label, 0) + 1
-        except:
+        dt = _safe_to_datetime(val)
+        if dt is None:
             continue
+        q_label = f"Q{(dt.month - 1) // 3 + 1} {dt.year}"
+        quarters[q_label] = quarters.get(q_label, 0) + 1
     # Sort by year then quarter
-    sorted_q = sorted(quarters.items(), key=lambda x: (x[0].split()[1], x[0].split()[0]), reverse=True)
+    sorted_q = sorted(quarters.items(), key=lambda x: (int(x[0].split()[1]), x[0].split()[0]), reverse=True)
     return [{"quarter": q, "record_count": c} for q, c in sorted_q]
 
 
@@ -243,12 +255,11 @@ def _filter_by_quarter(df: pd.DataFrame, date_col: str, quarter: str) -> pd.Data
 
     mask = []
     for val in df[date_col]:
-        try:
-            dt = pd.to_datetime(val)
-            in_quarter = dt.year == year and month_start <= dt.month <= month_end
-            mask.append(in_quarter)
-        except:
+        dt = _safe_to_datetime(val)
+        if dt is None:
             mask.append(False)
+        else:
+            mask.append(dt.year == year and month_start <= dt.month <= month_end)
     return df[mask].reset_index(drop=True)
 
 
@@ -1191,32 +1202,40 @@ async def calculate_multi(
 
         def _try_join(df_left, df_right, left_col, right_col, value_cols, label):
             """Try to join and return (merged_df, match_count, total).
-            Tries exact match first, then normalized match."""
+            Tries exact match first, then normalized match.
+            Never drops existing columns from df_left."""
             total = len(df_left)
 
+            # Only bring value columns that don't already exist in df_left
+            new_value_cols = [c for c in value_cols if c not in df_left.columns]
+            if not new_value_cols:
+                return df_left, 0, total
+
             # Strategy 1: exact string match
-            right_sub = df_right[[right_col] + value_cols].copy()
+            right_sub = df_right[[right_col] + new_value_cols].copy()
             right_sub[right_col] = right_sub[right_col].astype(str).str.strip()
+            df_left = df_left.copy()
             df_left[left_col] = df_left[left_col].astype(str).str.strip()
             right_sub = right_sub.rename(columns={right_col: left_col})
             right_sub = right_sub.drop_duplicates(subset=[left_col], keep='first')
             merged = df_left.merge(right_sub, on=left_col, how='left', suffixes=('', f'_{label}'))
-            matched = sum(merged[value_cols[0]].notna()) if value_cols[0] in merged.columns else 0
+            matched = sum(merged[new_value_cols[0]].notna()) if new_value_cols[0] in merged.columns else 0
 
             if matched > total * 0.3:  # >30% match = good enough
                 return merged, matched, total
 
             # Strategy 2: normalized keys (strip zeros, lowercase)
             log.info(f"  {label}: exact match {matched}/{total}, trying normalized keys...")
-            df_left_copy = df_left.drop(columns=[c for c in value_cols if c in df_left.columns], errors='ignore')
-            right_sub2 = df_right[[right_col] + value_cols].copy()
+            # Drop only the NEW columns that Strategy 1 added (not existing ones)
+            df_left_clean = merged.drop(columns=[c for c in new_value_cols if c in merged.columns], errors='ignore')
+            right_sub2 = df_right[[right_col] + new_value_cols].copy()
             join_key = f'_norm_join_{label}'
-            df_left_copy[join_key] = _normalize_join_key(df_left_copy[left_col])
+            df_left_clean[join_key] = _normalize_join_key(df_left_clean[left_col])
             right_sub2[join_key] = _normalize_join_key(right_sub2[right_col])
             right_sub2 = right_sub2.drop(columns=[right_col])
             right_sub2 = right_sub2.drop_duplicates(subset=[join_key], keep='first')
-            merged2 = df_left_copy.merge(right_sub2, on=join_key, how='left', suffixes=('', f'_{label}'))
-            matched2 = sum(merged2[value_cols[0]].notna()) if value_cols[0] in merged2.columns else 0
+            merged2 = df_left_clean.merge(right_sub2, on=join_key, how='left', suffixes=('', f'_{label}'))
+            matched2 = sum(merged2[new_value_cols[0]].notna()) if new_value_cols[0] in merged2.columns else 0
             merged2 = merged2.drop(columns=[join_key], errors='ignore')
 
             if matched2 > matched:
@@ -1238,27 +1257,22 @@ async def calculate_multi(
             time_value_cols = [c for c in [wait_col, reg_col, consult_col] if c]
 
             if time_value_cols:
+                # Try multiple join key strategies — always require a real key match
                 time_file_col = time_col_map.get("file_no") or time_col_map.get("patient_id")
                 primary_file_col = col_map.get("file_no") or col_map.get("patient_id")
 
                 matched = 0
-                if len(df_time_norm) == len(df_merged):
-                    # Same row count = likely same order, copy columns directly
-                    for vc in time_value_cols:
-                        df_merged[vc] = df_time_norm[vc].values
-                    matched = len(df_merged)
-                    merge_diagnostics.append(f"Time Data: {matched} rows copied directly (same row count)")
-                elif time_file_col and primary_file_col:
+                if time_file_col and primary_file_col:
+                    # Strategy 1+2: exact then normalized join on file_no
                     df_merged, matched, total = _try_join(
                         df_merged, df_time_norm, primary_file_col, time_file_col, time_value_cols, 'time')
                     merge_diagnostics.append(f"Time Data: {matched}/{total} rows matched on {primary_file_col}")
 
-                    # Strategy 3: if join failed badly, try using patient_id instead of file_no
+                    # Strategy 3: if join failed, try patient_id as alternate key
                     if matched < len(df_merged) * 0.1 and pid_col and pid_col != primary_file_col:
                         alt_time_col = time_col_map.get("patient_id")
                         if alt_time_col and alt_time_col != time_file_col:
                             log.info(f"  Time Data: trying alt join key patient_id ({alt_time_col})")
-                            # Remove previous failed merge columns
                             for vc in time_value_cols:
                                 df_merged = df_merged.drop(columns=[vc], errors='ignore')
                             df_merged, matched2, total = _try_join(
@@ -1267,15 +1281,8 @@ async def calculate_multi(
                                 matched = matched2
                                 merge_diagnostics[-1] = f"Time Data: {matched}/{total} rows matched on {pid_col} (fallback)"
 
-                    # Strategy 4: if still no match and row counts are close, try index-based copy
-                    if matched < len(df_merged) * 0.1 and abs(len(df_time_norm) - len(df_merged)) < len(df_merged) * 0.05:
-                        log.info(f"  Time Data: join failed, row counts close ({len(df_time_norm)} vs {len(df_merged)}), using index copy")
-                        min_rows = min(len(df_time_norm), len(df_merged))
-                        for vc in time_value_cols:
-                            df_merged = df_merged.drop(columns=[vc], errors='ignore')
-                            df_merged.loc[:min_rows-1, vc] = df_time_norm[vc].values[:min_rows]
-                        matched = min_rows
-                        merge_diagnostics[-1] = f"Time Data: {matched} rows copied by index (row counts close, join keys didn't match)"
+                    if matched < len(df_merged) * 0.1:
+                        merge_diagnostics[-1] += " — WARNING: very low match rate, check ID formats"
                 else:
                     merge_diagnostics.append("Time Data: no join key found, skipped")
             else:

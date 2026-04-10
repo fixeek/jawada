@@ -416,15 +416,26 @@ def normalise_df(df: pd.DataFrame) -> pd.DataFrame:
 
 def find_col(df: pd.DataFrame, candidates: List[str]) -> Optional[str]:
     """Find first matching column from a list of candidates.
-    Prefers columns that actually have data over empty ones."""
+    Prefers: (1) non-suffixed columns with data, (2) suffixed columns with data,
+    (3) any matching column. Suffixed columns (from merges like _visit, _time)
+    are deprioritised to prefer the primary file's columns."""
     cols_lower = {c.lower(): c for c in df.columns}
-    # First pass: find columns with data
+    merge_suffixes = ('_visit', '_time', '_eclaims', '_1', '_2', '_3')
+
+    # Pass 1: non-suffixed columns with data
+    for c in candidates:
+        if c.lower() in cols_lower:
+            actual = cols_lower[c.lower()]
+            if not any(actual.endswith(s) for s in merge_suffixes):
+                if df[actual].notna().sum() > 0:
+                    return actual
+    # Pass 2: any column with data (including suffixed)
     for c in candidates:
         if c.lower() in cols_lower:
             actual = cols_lower[c.lower()]
             if df[actual].notna().sum() > 0:
                 return actual
-    # Second pass: return any matching column even if empty
+    # Pass 3: any matching column even if empty
     for c in candidates:
         if c.lower() in cols_lower:
             return cols_lower[c.lower()]
@@ -696,21 +707,29 @@ def calc_omc002(df: pd.DataFrame, col_map: dict) -> KPIResult:
     if r.status == "insufficient_data":
         return r
 
+    # Per-patient: if any visit has bronchitis, check if ANY visit had antibiotic
+    from collections import defaultdict
+    patient_bronchitis = {}  # pid -> {"has_antibiotic": bool, "drug": str}
     for _, row in df.iterrows():
         age = safe_age(row.get(age_col, "")) if age_col else None
         if age is not None and age < 0.25:  # 3 months minimum
             continue
         if not row_icd_exact(row, col_map, BRONCHITIS_ICD):
             continue
-        r.denominator += 1
+        pid = str(row.get(col_map.get("patient_id",""), row.name))
         drug = str(row.get(drug_col, "")).strip()
         is_antibiotic = drug_matches(drug, ANTIBIOTIC_DRUGS) if drug else False
-        pid = str(row.get(col_map.get("patient_id",""), ""))
-        if not is_antibiotic:
+        if pid not in patient_bronchitis:
+            patient_bronchitis[pid] = {"has_antibiotic": False, "drug": drug or "none"}
+        if is_antibiotic:
+            patient_bronchitis[pid]["has_antibiotic"] = True
+            patient_bronchitis[pid]["drug"] = drug
+
+    for pid, info in patient_bronchitis.items():
+        r.denominator += 1
+        if not info["has_antibiotic"]:
             r.numerator += 1
-            r.patient_details.append({"patient": pid, "drug": drug or "none", "antibiotic": False})
-        else:
-            r.patient_details.append({"patient": pid, "drug": drug, "antibiotic": True})
+        r.patient_details.append({"patient": pid, "drug": info["drug"], "antibiotic": info["has_antibiotic"]})
 
     r.calculate_percentage()
     return r
@@ -985,6 +1004,10 @@ def calc_omc006(df: pd.DataFrame, col_map: dict) -> KPIResult:
             if age is not None and (age < AGE_MIN_GENERAL or age > AGE_MAX_HTN):
                 continue
 
+            # Exclusion: ESRD and kidney transplant patients
+            if has_icd and row_icd_exact(row, col_map, HTN_EXCLUSION_ICD):
+                continue
+
             if use_icd_filter:
                 is_htn = False
                 if has_icd:
@@ -1078,6 +1101,8 @@ def calc_omc007(df: pd.DataFrame, col_map: dict) -> KPIResult:
 
     from collections import defaultdict
     patient_days = defaultdict(int)
+    opioid_patients = set()
+    drug_class_col = col_map.get("drug_class")
 
     for _, row in df.iterrows():
         pid = str(row.get(col_map.get("patient_id",""), row.name))
@@ -1097,7 +1122,14 @@ def calc_omc007(df: pd.DataFrame, col_map: dict) -> KPIResult:
         if not has_opioid:
             continue
 
-        r.denominator += 1
+        # Exclude injectable, cough/cold, transdermal etc per DOH V2
+        drug_text = str(row.get(drug_col, "")).strip().lower() if drug_col else ""
+        drug_class = str(row.get(drug_class_col, "")).strip().lower() if drug_class_col else ""
+        combined = drug_text + " " + drug_class
+        if any(excl in combined for excl in OPIOID_EXCLUDED_FORMS):
+            continue
+
+        opioid_patients.add(pid)
 
         if days_col:
             try:
@@ -1106,12 +1138,18 @@ def calc_omc007(df: pd.DataFrame, col_map: dict) -> KPIResult:
             except:
                 pass
 
-    if days_col:
-        # Rate 1: >= 15 days in 30-day period (simplified as total days >= 15)
-        at_risk = sum(1 for d in patient_days.values() if d >= OPIOID_DAYS_30)
-        r.numerator = at_risk
-    else:
-        # Proxy: all new opioid patients flagged
+    # Denominator: unique patients with opioid prescriptions
+    r.denominator = len(opioid_patients)
+
+    if days_col and opioid_patients:
+        # Rate 1: >= 15 days in 30-day period
+        at_risk_30 = sum(1 for pid in opioid_patients if patient_days.get(pid, 0) >= OPIOID_DAYS_30)
+        # Rate 2: >= 31 days in 62-day period (use total days as proxy for window)
+        at_risk_62 = sum(1 for pid in opioid_patients if patient_days.get(pid, 0) >= OPIOID_DAYS_62)
+        # Use the higher of the two rates (more conservative)
+        r.numerator = max(at_risk_30, at_risk_62)
+    elif opioid_patients:
+        # Proxy: all opioid patients flagged
         r.numerator = r.denominator
 
     r.calculate_percentage()
@@ -1157,6 +1195,8 @@ def calc_omc008(df: pd.DataFrame, col_map: dict) -> KPIResult:
 
     seen = set()
 
+    has_icd = col_map.get("icd_code") or col_map.get("icd_secondary")
+
     for _, row in df.iterrows():
         pid = str(row.get(col_map.get("patient_id",""), row.name))
         if pid in seen:
@@ -1164,6 +1204,10 @@ def calc_omc008(df: pd.DataFrame, col_map: dict) -> KPIResult:
 
         age = safe_age(row.get(age_col, "")) if age_col else None
         if age is not None and age < AGE_MIN_GENERAL:
+            continue
+
+        # Exclusion: ESRD and kidney transplant patients
+        if has_icd and row_icd_exact(row, col_map, KIDNEY_EXCLUSION_ICD):
             continue
 
         in_denominator = False
@@ -1277,7 +1321,7 @@ def data_quality_report(df: pd.DataFrame, col_map: dict) -> dict:
     kpi_field_reqs = {
         "OMC001": { "critical": ["ICD-10 code", "Drug name"],           "optional": ["Age"] },
         "OMC002": { "critical": ["ICD-10 code", "Drug name"],           "optional": ["Age"] },
-        "OMC003": { "critical": ["Registration time", "Consult time"],  "optional": [] },
+        "OMC003": { "critical": ["Wait time OR Registration + Consult timestamps"],  "optional": [] },
         "OMC004": { "critical": ["BMI"],                                "optional": ["Age", "Pregnancy flag", "Management plan"] },
         "OMC005": { "critical": ["ICD-10 code", "HbA1c result"],        "optional": ["Age"] },
         "OMC006": { "critical": ["BP reading"],                         "optional": ["ICD-10 code", "Age", "Pregnancy flag"] },
@@ -1487,7 +1531,10 @@ def load_file(file_path: str) -> pd.DataFrame:
       2. Sheet name context for Excel (e.g. 'JULY 2025')
       3. Default to DD/MM (UAE standard)"""
     if file_path.endswith(".csv"):
-        df = pd.read_csv(file_path)
+        try:
+            df = pd.read_csv(file_path, encoding='utf-8')
+        except UnicodeDecodeError:
+            df = pd.read_csv(file_path, encoding='latin-1')
         df = _fix_dates_in_df(df)
         return df
     elif file_path.endswith((".xlsx",".xls")):

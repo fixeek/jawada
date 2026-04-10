@@ -106,7 +106,8 @@ function ReadinessVerdict({ summary, results }) {
     not_ready: { icon: ShieldX,     color: 'text-red-600',     bg: 'from-red-50 to-rose-50/30',      border: 'border-red-100',
                  headline: 'Not ready for Jawda submission',
                  sub: `${breakdown}. Review the action plan below.` },
-  }[verdict] || cfg?.attention
+  }[verdict] || { icon: ShieldAlert, color: 'text-amber-700', bg: 'from-amber-50 to-orange-50/30', border: 'border-amber-100',
+                   headline: 'KPI Assessment', sub: breakdown }
 
   const Icon = cfg.icon
 
@@ -135,11 +136,12 @@ function ReadinessVerdict({ summary, results }) {
 
 function SummaryBar({ kpis }) {
   const vals = Object.values(kpis)
-  const meeting = vals.filter(k => k.meets_target === true).length
-  const below   = vals.filter(k => k.meets_target === false).length
-  const proxy   = vals.filter(k => k.status === 'proxy').length
-  const missing = vals.filter(k => k.status === 'insufficient_data').length
+  // Mutually exclusive categories — each KPI counted exactly once
   const na      = vals.filter(k => k.status === 'not_applicable').length
+  const missing = vals.filter(k => k.status === 'insufficient_data').length
+  const meeting = vals.filter(k => k.meets_target === true && k.status !== 'not_applicable').length
+  const below   = vals.filter(k => k.meets_target === false && k.status !== 'proxy').length
+  const proxy   = vals.filter(k => k.status === 'proxy' && k.meets_target !== true).length
   const items = [
     { count: meeting, label: 'Meeting Target',  icon: CheckCircle,   bg: 'bg-emerald-50', numColor: 'text-emerald-700' },
     { count: below,   label: 'Below Target',    icon: Target,        bg: 'bg-red-50',     numColor: 'text-red-600' },
@@ -357,10 +359,10 @@ function QuarterComparison({ currentQ, currentKpis, prevQ, prevData }) {
         {/* Summary row */}
         <div className="px-5 py-3 bg-navy-50/30 border-t border-gray-100 flex items-center justify-between text-xs">
           <span className="text-gray-500 font-medium">
-            {prevQ}: {prevData.jawda_summary?.meeting_target || 0}/{prevData.jawda_summary?.calculable || 0} meeting target
+            {prevQ}: {prevData.jawda_summary?.meeting_target || 0}/{8 - (prevData.jawda_summary?.not_applicable || 0)} passing
           </span>
           <span className="text-navy-500 font-bold">
-            {currentQ}: {currentKpis ? Object.values(currentKpis).filter(k => k.meets_target === true).length : 0}/{Object.values(currentKpis).filter(k => k.status !== 'insufficient_data').length} meeting target
+            {currentQ}: {currentKpis ? Object.values(currentKpis).filter(k => k.meets_target === true).length : 0}/{Object.values(currentKpis).filter(k => k.status !== 'insufficient_data' && k.status !== 'not_applicable').length} passing
           </span>
         </div>
       </div>
