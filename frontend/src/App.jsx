@@ -18,6 +18,7 @@ import AdminHealthPage from './pages/AdminHealthPage'
 import UsersPage from './pages/UsersPage'
 import SettingsPage from './pages/SettingsPage'
 import KPIExplorerPage from './pages/KPIExplorerPage'
+import NotificationBell from './components/NotificationBell'
 import KPIDetailPage from './pages/KPIDetailPage'
 import SubmissionsPage from './pages/SubmissionsPage'
 import ReportsPage from './pages/ReportsPage'
@@ -449,14 +450,24 @@ function AppShell() {
           user={user}
           onLogout={logout}
         />
-        <main className="flex-1 min-h-screen overflow-auto">
+        <main className="flex-1 min-h-screen overflow-auto relative">
+          {!isSuperAdmin(user) && (
+            <div className="absolute top-4 right-6 z-10">
+              <NotificationBell />
+            </div>
+          )}
           {renderPage()}
         </main>
       </div>
 
       <div className="lg:hidden">
         <MobileNav active={page} onNavigate={navigate} user={user} onLogout={logout} />
-        <main className="min-h-screen">
+        <main className="min-h-screen relative">
+          {!isSuperAdmin(user) && (
+            <div className="absolute top-4 right-4 z-10">
+              <NotificationBell />
+            </div>
+          )}
           {renderPage()}
         </main>
       </div>

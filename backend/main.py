@@ -31,7 +31,9 @@ try:
     from database import (init_db, save_results, get_facility_history, get_facility_history_by_id,
                           save_facility_col_mapping, update_submission_status,
                           log_audit, get_audit_log,
-                          get_platform_stats, get_platform_audit_log, get_system_health)
+                          get_platform_stats, get_platform_audit_log, get_system_health,
+                          create_notification, get_notifications, mark_notifications_read,
+                          get_unread_count, generate_deadline_notifications)
     init_db()
     USE_DB = True
     log.info("✓ Connected to PostgreSQL")
@@ -795,6 +797,40 @@ def clinic_dashboard(user: dict = Depends(get_current_user)):
         "history": history,
         "latest": latest,
     }
+
+
+@app.get("/api/notifications")
+def list_notifications(user: dict = Depends(get_current_user)):
+    """Get notifications for the logged-in user's facility."""
+    facility_id = user.get("facility_id")
+    if not facility_id:
+        return {"notifications": [], "unread": 0}
+    # Generate deadline reminders on each check
+    if USE_DB:
+        try:
+            generate_deadline_notifications(facility_id)
+        except Exception as e:
+            log.error(f"Deadline notification generation failed: {e}")
+    try:
+        notifications = get_notifications(facility_id, user.get("id"))
+        unread = get_unread_count(facility_id, user.get("id"))
+        return {"notifications": notifications, "unread": unread}
+    except Exception as e:
+        log.error(f"Get notifications failed: {e}")
+        return {"notifications": [], "unread": 0}
+
+
+@app.post("/api/notifications/read")
+def read_notifications(user: dict = Depends(get_current_user)):
+    """Mark all notifications as read."""
+    facility_id = user.get("facility_id")
+    if not facility_id:
+        return {"success": True}
+    try:
+        mark_notifications_read(facility_id, user.get("id"))
+    except Exception as e:
+        log.error(f"Mark notifications read failed: {e}")
+    return {"success": True}
 
 
 @app.post("/api/clinic/report/pdf")

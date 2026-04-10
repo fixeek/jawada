@@ -178,6 +178,20 @@ def init_db():
             END IF;
         END $$;
 
+        CREATE TABLE IF NOT EXISTS notifications (
+            id SERIAL PRIMARY KEY,
+            facility_id INTEGER REFERENCES facilities(id),
+            user_id INTEGER,
+            type VARCHAR(50) NOT NULL,
+            title VARCHAR(255) NOT NULL,
+            message TEXT DEFAULT '',
+            metadata JSONB DEFAULT '{}',
+            is_read BOOLEAN DEFAULT FALSE,
+            created_at TIMESTAMP DEFAULT NOW()
+        );
+        CREATE INDEX IF NOT EXISTS idx_notif_facility ON notifications(facility_id);
+        CREATE INDEX IF NOT EXISTS idx_notif_user ON notifications(user_id);
+
         CREATE TABLE IF NOT EXISTS audit_log (
             id SERIAL PRIMARY KEY,
             facility_id INTEGER REFERENCES facilities(id),
@@ -820,3 +834,80 @@ def update_submission_status(facility_id: int, quarter: str, status: str,
                           updated_by = EXCLUDED.updated_by, updated_at = NOW()
         """, (facility_id, quarter, status, notes, updated_by))
         conn.commit()
+
+
+# ── Notifications ─────────────────────────────────────────────────
+
+def create_notification(facility_id, type_, title, message="", user_id=None, metadata=None):
+    with db_cursor() as (conn, cur):
+        cur.execute("""
+            INSERT INTO notifications (facility_id, user_id, type, title, message, metadata)
+            VALUES (%s, %s, %s, %s, %s, %s)
+        """, (facility_id, user_id, type_, title, message, json.dumps(metadata or {})))
+        conn.commit()
+
+
+def get_notifications(facility_id, user_id=None, limit=20):
+    with db_cursor(dict_cursor=True) as (conn, cur):
+        cur.execute("""
+            SELECT id, type, title, message, metadata, is_read, created_at
+            FROM notifications
+            WHERE facility_id = %s AND (user_id IS NULL OR user_id = %s)
+            ORDER BY created_at DESC LIMIT %s
+        """, (facility_id, user_id, limit))
+        result = []
+        for r in cur.fetchall():
+            entry = dict(r)
+            entry['created_at'] = entry['created_at'].isoformat() if entry.get('created_at') else None
+            result.append(entry)
+        return result
+
+
+def mark_notifications_read(facility_id, user_id=None):
+    with db_cursor() as (conn, cur):
+        cur.execute("""
+            UPDATE notifications SET is_read = TRUE
+            WHERE facility_id = %s AND (user_id IS NULL OR user_id = %s) AND is_read = FALSE
+        """, (facility_id, user_id))
+        conn.commit()
+
+
+def get_unread_count(facility_id, user_id=None):
+    with db_cursor() as (conn, cur):
+        cur.execute("""
+            SELECT COUNT(*) FROM notifications
+            WHERE facility_id = %s AND (user_id IS NULL OR user_id = %s) AND is_read = FALSE
+        """, (facility_id, user_id))
+        return cur.fetchone()[0]
+
+
+def generate_deadline_notifications(facility_id):
+    """Check DOH deadlines and create reminders if approaching."""
+    from datetime import date
+    today = date.today()
+    year = today.year
+    deadlines = [
+        (f"Q1 {year}", date(year, 4, 30)),
+        (f"Q2 {year}", date(year, 7, 31)),
+        (f"Q3 {year}", date(year, 10, 31)),
+        (f"Q4 {year}", date(year + 1, 1, 31)),
+    ]
+    for quarter, deadline in deadlines:
+        if deadline < today:
+            continue
+        days_left = (deadline - today).days
+        if days_left <= 30:
+            with db_cursor(dict_cursor=True) as (conn, cur):
+                cur.execute("""
+                    SELECT id FROM notifications
+                    WHERE facility_id = %s AND type = 'deadline_reminder'
+                    AND metadata->>'quarter' = %s AND created_at::date = CURRENT_DATE
+                """, (facility_id, quarter))
+                if cur.fetchone():
+                    continue
+            create_notification(
+                facility_id=facility_id, type_="deadline_reminder",
+                title=f"DOH submission due in {days_left} day{'s' if days_left != 1 else ''}",
+                message=f"{quarter} submission due {deadline.strftime('%d %b %Y')}. Submit at bpmweb.doh.gov.ae.",
+                metadata={"quarter": quarter, "days_left": days_left},
+            )
