@@ -905,15 +905,13 @@ export default function Dashboard({ results, onBack, onAudit }) {
           </div>
         </div>
 
-        {/* Summary strip — only on latest quarter view */}
-        {isLatest && (
-          <SummaryStrip
-            quarterCount={quarterList.length}
-            lastUpload={lastUpload}
-            overallTrend={overallTrend}
-            deadline={deadline}
-          />
-        )}
+        {/* Summary strip */}
+        <SummaryStrip
+          quarterCount={quarterList.length}
+          lastUpload={lastUpload}
+          overallTrend={overallTrend}
+          deadline={deadline}
+        />
 
         {/* Quarter tabs — clickable */}
         {quarterList.length > 1 && (
