@@ -1,7 +1,8 @@
 import { useState } from 'react'
 import axios from 'axios'
-import { User as UserIcon, Target, Shield, Activity, Settings, Save, CheckCircle, AlertCircle, KeyRound } from 'lucide-react'
+import { User as UserIcon, Target, Shield, Activity, Settings, Save, CheckCircle, AlertCircle, KeyRound, Globe } from 'lucide-react'
 import { isSuperAdmin, isClinicAdmin, ROLE_LABELS, useAuth } from '../utils/auth'
+import { useI18n } from '../utils/i18n'
 
 const BASE = import.meta.env.VITE_API_URL || ''
 
@@ -107,6 +108,32 @@ export default function SettingsPage({ user }) {
 
         {/* Change password */}
         <ChangePasswordSection />
+
+        {/* Language */}
+        {(() => {
+          const { lang, setLang, t } = useI18n()
+          return (
+            <div className="bg-white rounded-2xl border border-gray-100 shadow-card p-6">
+              <h3 className="text-sm font-bold text-navy-500 mb-4 flex items-center gap-2">
+                <Globe size={14} className="text-indigo-500" /> {t('settings.language')}
+              </h3>
+              <div className="flex gap-3">
+                <button onClick={() => setLang('en')}
+                  className={`flex-1 py-3 rounded-xl border-2 font-bold text-sm transition-all ${
+                    lang === 'en' ? 'border-teal-400 bg-teal-50 text-teal-700' : 'border-gray-200 text-gray-500 hover:border-gray-300'
+                  }`}>
+                  🇬🇧 English
+                </button>
+                <button onClick={() => setLang('ar')}
+                  className={`flex-1 py-3 rounded-xl border-2 font-bold text-sm transition-all ${
+                    lang === 'ar' ? 'border-teal-400 bg-teal-50 text-teal-700' : 'border-gray-200 text-gray-500 hover:border-gray-300'
+                  }`}>
+                  🇦🇪 العربية
+                </button>
+              </div>
+            </div>
+          )
+        })()}
 
         {/* Super admin sections */}
         {isSA && (

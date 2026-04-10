@@ -23,7 +23,8 @@ import KPIDetailPage from './pages/KPIDetailPage'
 import SubmissionsPage from './pages/SubmissionsPage'
 import ReportsPage from './pages/ReportsPage'
 import AcceptInvitePage from './pages/AcceptInvitePage'
-import { AuthProvider, useAuth, ROLES, ROLE_LABELS, isSuperAdmin, canManageUsers, canUpload } from './utils/auth'
+import { AuthProvider, useAuth, ROLES, ROLE_LABELS, isSuperAdmin, isClinicAdmin, canManageUsers, canUpload } from './utils/auth'
+import { I18nProvider, useI18n, LanguageSwitcher } from './utils/i18n'
 
 function getNavItems(user) {
   // Super admin has a completely different menu — platform management
@@ -73,11 +74,14 @@ function Sidebar({ active, onNavigate, collapsed, onCollapse, user, onLogout }) 
             <div className="text-navy-300 text-[9px] font-medium tracking-wide uppercase">by TriZodiac</div>
           </div>
         )}
-        {!isSuperAdmin(user) && (
-          <div className="flex-shrink-0 [&_button]:text-navy-300 [&_button:hover]:text-white [&_button:hover]:bg-white/10">
-            <NotificationBell />
-          </div>
-        )}
+        <div className="flex items-center gap-1 flex-shrink-0">
+          <LanguageSwitcher />
+          {!isSuperAdmin(user) && (
+            <div className="[&_button]:text-navy-300 [&_button:hover]:text-white [&_button:hover]:bg-white/10">
+              <NotificationBell />
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Facility badge */}
@@ -487,8 +491,10 @@ function AppShell() {
 
 export default function App() {
   return (
-    <AuthProvider>
-      <AppShell />
-    </AuthProvider>
+    <I18nProvider>
+      <AuthProvider>
+        <AppShell />
+      </AuthProvider>
+    </I18nProvider>
   )
 }
