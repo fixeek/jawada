@@ -1167,6 +1167,60 @@ async def validate_multi(
     if "visit_details" not in results or not results.get("visit_details", {}).get("valid"):
         warnings.append("Visit Details not uploaded — ICD/CPT cross-validation not available.")
 
+    # Cross-file ID validation: check if patient IDs overlap between files
+    id_warnings = []
+    if "kpi_data" in file_paths and results.get("kpi_data", {}).get("valid"):
+        try:
+            df_primary = load_file(file_paths["kpi_data"])
+            df_primary = normalise_df(df_primary)
+            primary_map = map_columns(df_primary)
+            primary_pid = primary_map.get("patient_id")
+            primary_fno = primary_map.get("file_no")
+
+            if primary_pid or primary_fno:
+                primary_id_col = primary_fno or primary_pid
+                primary_ids = set(df_primary[primary_id_col].dropna().astype(str).str.strip()
+                                  .str.replace(r'\.0$', '', regex=True))
+
+                for slot_name, slot_label, affects in [
+                    ("time_data", "Time Data", "OMC003 (wait time)"),
+                    ("visit_details", "Visit Details", "ICD/drug enrichment for OMC001/002/005/006"),
+                ]:
+                    if slot_name in file_paths and results.get(slot_name, {}).get("valid"):
+                        try:
+                            df_other = load_file(file_paths[slot_name])
+                            df_other = normalise_df(df_other)
+                            other_map = map_columns(df_other)
+                            other_id_col = other_map.get("file_no") or other_map.get("patient_id")
+                            if other_id_col:
+                                other_ids = set(df_other[other_id_col].dropna().astype(str).str.strip()
+                                               .str.replace(r'\.0$', '', regex=True))
+                                overlap = len(primary_ids & other_ids)
+                                overlap_pct = round(overlap / len(primary_ids) * 100) if primary_ids else 0
+                                if overlap_pct < 10:
+                                    id_warnings.append({
+                                        "file": slot_label,
+                                        "severity": "error",
+                                        "message": f"{slot_label} patient IDs do not match KPI Excel ({overlap}/{len(primary_ids)} overlap = {overlap_pct}%). "
+                                                   f"This will affect {affects}. "
+                                                   f"KPI Excel {primary_id_col} samples: {list(primary_ids)[:3]}. "
+                                                   f"{slot_label} {other_id_col} samples: {list(other_ids)[:3]}. "
+                                                   f"Ensure the same patient ID format is used across all files."
+                                    })
+                                elif overlap_pct < 50:
+                                    id_warnings.append({
+                                        "file": slot_label,
+                                        "severity": "warning",
+                                        "message": f"{slot_label} has partial ID overlap with KPI Excel ({overlap_pct}%). Some patient data may not merge correctly."
+                                    })
+                        except Exception as e:
+                            log.error(f"ID validation for {slot_name}: {e}")
+        except Exception as e:
+            log.error(f"Cross-file ID validation failed: {e}")
+
+    for w in id_warnings:
+        warnings.append(w["message"])
+
     total_rows = sum(r.get("rows", 0) for r in results.values() if r.get("valid"))
     prev_total_rows = sum(r.get("rows", 0) for r in prev_results.values() if r.get("valid"))
 
@@ -1182,6 +1236,7 @@ async def validate_multi(
         "years_detected": years,
         "date_range": date_range,
         "warnings": warnings,
+        "id_warnings": id_warnings,
     }
 
 
@@ -1276,6 +1331,8 @@ async def calculate_multi(
             return merged, matched, total
 
         # ── Merge Time Data ─────────────────────────────────────────────
+        time_merge_failed = False
+        df_time_standalone = None  # Keep reference for OMC003 fallback
         if "time_data" in paths and "time_data" != primary_slot:
             df_time = load_file(paths["time_data"])
             df_time_norm = normalise_df(df_time)
@@ -1350,8 +1407,12 @@ async def calculate_multi(
 
                     if matched < len(df_merged) * 0.1:
                         merge_diagnostics[-1] += " — WARNING: very low match rate, check ID formats"
+                        time_merge_failed = True
+                        df_time_standalone = df_time_norm
                 else:
                     merge_diagnostics.append("Time Data: no join key found, skipped")
+                    time_merge_failed = True
+                    df_time_standalone = df_time_norm
             else:
                 merge_diagnostics.append("Time Data: no wait time or timestamp columns found")
 
@@ -1452,6 +1513,55 @@ async def calculate_multi(
             elif not quarter_label:
                 quarter_label = "Unknown"
             results = run_all_kpis(df_merged, quarter_label)
+
+        # ── OMC003 fallback: run independently on Time Data if merge failed ──
+        if time_merge_failed and df_time_standalone is not None:
+            omc003 = results.get("kpis", {}).get("OMC003", {})
+            if omc003.get("denominator", 0) == 0:
+                log.info("OMC003 fallback: running independently on Time Data file")
+                try:
+                    from engine.kpi_engine import calc_omc003 as _calc_omc003, map_columns as _map_cols
+                    time_cm = _map_cols(df_time_standalone)
+                    # Filter Time Data by quarter if applicable
+                    time_date_col = time_cm.get("date_of_service")
+                    df_time_for_calc = df_time_standalone
+                    if quarter and time_date_col:
+                        df_time_filtered = _filter_by_quarter(df_time_standalone, time_date_col, quarter)
+                        if len(df_time_filtered) > 0:
+                            df_time_for_calc = df_time_filtered
+                    omc003_result = _calc_omc003(df_time_for_calc, time_cm)
+                    omc003_dict = omc003_result.to_dict()
+                    if omc003_dict.get("denominator", 0) > 0:
+                        results["kpis"]["OMC003"] = omc003_dict
+                        merge_diagnostics.append(
+                            f"OMC003 calculated independently from Time Data: "
+                            f"{omc003_dict['numerator']}/{omc003_dict['denominator']} "
+                            f"({omc003_dict['percentage']}%)")
+                        log.info(f"OMC003 fallback success: {omc003_dict['numerator']}/{omc003_dict['denominator']}")
+                        # Recalculate jawda_summary since OMC003 changed
+                        kpi_vals = [v for k, v in results["kpis"].items() if not k.startswith("ERROR")]
+                        na_count = sum(1 for k in kpi_vals if k["status"] == "not_applicable")
+                        insuff = sum(1 for k in kpi_vals if k["status"] == "insufficient_data")
+                        calculable = [k for k in kpi_vals if k["status"] not in ("insufficient_data", "not_applicable")]
+                        meeting = [k for k in calculable if k.get("meets_target") is True]
+                        below = [k for k in calculable if k.get("meets_target") is False]
+                        proxy = [k for k in kpi_vals if k["status"] == "proxy"]
+                        results["jawda_summary"] = {
+                            "total_kpis": len(kpi_vals),
+                            "calculable": len(calculable),
+                            "meeting_target": len(meeting),
+                            "below_target": len(below),
+                            "missing_data": insuff,
+                            "not_applicable": na_count,
+                            "proxy_data": len(proxy),
+                            "readiness_pct": round(len(meeting) / len(calculable) * 100) if calculable else 0,
+                            "verdict": "ready" if len(calculable) > 0 and len(below) == 0 and insuff == 0
+                                       else "attention" if len(meeting) > 0
+                                       else "not_ready",
+                        }
+                except Exception as e:
+                    log.error(f"OMC003 fallback failed: {e}")
+                    merge_diagnostics.append(f"OMC003 standalone calculation failed: {str(e)[:100]}")
 
         results["facility"] = facility_name
         results["files_used"] = list(paths.keys())
