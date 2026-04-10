@@ -86,16 +86,18 @@ function SubmissionTracker({ quarter, submission, onUpdate }) {
 function ReadinessVerdict({ summary, results }) {
   if (!summary) return null
   const { meeting_target, below_target, missing_data, calculable, readiness_pct, verdict } = summary
+  const na = summary.not_applicable || 0
+  const naNote = na > 0 ? ` ${na} N/A (no eligible patients).` : ''
 
   const cfg = {
     ready:     { icon: ShieldCheck, color: 'text-emerald-700', bg: 'from-emerald-50 to-green-50/50', border: 'border-emerald-100',
-                 headline: 'Ready for Jawda Submission', sub: 'All calculable KPIs meet DOH targets.' },
+                 headline: 'Ready for Jawda Submission', sub: `All ${calculable} calculable KPIs meet DOH targets.${naNote}` },
     attention: { icon: ShieldAlert, color: 'text-amber-700',   bg: 'from-amber-50 to-orange-50/30',  border: 'border-amber-100',
-                 headline: `${below_target + missing_data} KPI${below_target + missing_data > 1 ? 's' : ''} need attention before submission`,
-                 sub: `${meeting_target} of ${calculable} calculable KPIs meet DOH targets. ${missing_data > 0 ? `${missing_data} cannot be calculated yet.` : ''}` },
+                 headline: `${below_target + missing_data} KPI${below_target + missing_data > 1 ? 's' : ''} need attention`,
+                 sub: `${meeting_target} of ${calculable} calculable KPIs meet DOH targets.${missing_data > 0 ? ` ${missing_data} cannot be calculated yet.` : ''}${naNote}` },
     not_ready: { icon: ShieldX,     color: 'text-red-600',     bg: 'from-red-50 to-rose-50/30',      border: 'border-red-100',
                  headline: 'Not ready for Jawda submission',
-                 sub: `${missing_data} KPIs cannot be calculated. Review the action plan below.` },
+                 sub: `${missing_data > 0 ? `${missing_data} KPIs cannot be calculated. ` : ''}${below_target > 0 ? `${below_target} below target. ` : ''}Review the action plan below.${naNote}` },
   }[verdict] || cfg?.attention
 
   const Icon = cfg.icon
@@ -129,14 +131,16 @@ function SummaryBar({ kpis }) {
   const below   = vals.filter(k => k.meets_target === false).length
   const proxy   = vals.filter(k => k.status === 'proxy').length
   const missing = vals.filter(k => k.status === 'insufficient_data').length
+  const na      = vals.filter(k => k.status === 'not_applicable').length
   const items = [
     { count: meeting, label: 'Meeting Target',  icon: CheckCircle,   bg: 'bg-emerald-50', numColor: 'text-emerald-700' },
     { count: below,   label: 'Below Target',    icon: Target,        bg: 'bg-red-50',     numColor: 'text-red-600' },
-    { count: proxy,   label: 'Proxy Data',      icon: AlertTriangle, bg: 'bg-amber-50',   numColor: 'text-amber-700' },
-    { count: missing, label: 'Cannot Calculate', icon: XCircle,      bg: 'bg-gray-50',    numColor: 'text-gray-500' },
+    ...(na > 0 ? [{ count: na, label: 'Not Applicable', icon: Minus, bg: 'bg-blue-50', numColor: 'text-blue-600' }] : []),
+    ...(proxy > 0 ? [{ count: proxy, label: 'Proxy Data', icon: AlertTriangle, bg: 'bg-amber-50', numColor: 'text-amber-700' }] : []),
+    ...(missing > 0 ? [{ count: missing, label: 'Insufficient Data', icon: XCircle, bg: 'bg-gray-50', numColor: 'text-gray-500' }] : []),
   ]
   return (
-    <div className="grid grid-cols-4 gap-4">
+    <div className={`grid gap-4 ${items.length <= 3 ? 'grid-cols-3' : items.length === 4 ? 'grid-cols-4' : 'grid-cols-5'}`}>
       {items.map(({ count, label, icon: Icon, bg, numColor }) => (
         <div key={label} className="bg-white border border-gray-100 rounded-2xl p-5 shadow-card hover:shadow-elevated transition-all">
           <div className="flex items-center justify-between">

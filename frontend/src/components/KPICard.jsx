@@ -66,6 +66,7 @@ export default function KPICard({ kpiId, kpi, prevKpi, prevQuarter, onClick }) {
 
   // Pass/fail styling
   const isInsufficient = kpi.status === 'insufficient_data'
+  const isNA = kpi.status === 'not_applicable'
   const meetsBadge = kpi.meets_target === true
     ? { text: `Meets target (${direction === 'lower' ? '≤' : '≥'}${kpi.target}%)`, style: 'text-emerald-700 bg-emerald-50 border-emerald-100' }
     : kpi.meets_target === false
@@ -78,6 +79,8 @@ export default function KPICard({ kpiId, kpi, prevKpi, prevQuarter, onClick }) {
     ? 'bg-gradient-to-r from-red-400 to-rose-400'
     : kpi.status === 'proxy'
     ? 'bg-gradient-to-r from-amber-400 to-orange-400'
+    : isNA
+    ? 'bg-gradient-to-r from-blue-200 to-indigo-200'
     : 'bg-gradient-to-r from-gray-200 to-gray-300'
 
   return (
@@ -119,6 +122,10 @@ export default function KPICard({ kpiId, kpi, prevKpi, prevQuarter, onClick }) {
           {meetsBadge ? (
             <span className={`text-[10px] px-2.5 py-1 rounded-lg font-bold border ${meetsBadge.style}`}>
               {meetsBadge.text}
+            </span>
+          ) : isNA ? (
+            <span className="text-[10px] px-2.5 py-1 rounded-lg font-bold border text-blue-600 bg-blue-50 border-blue-100">
+              N/A — No eligible patients
             </span>
           ) : isInsufficient ? (
             <span className="text-[10px] px-2.5 py-1 rounded-lg font-bold border text-gray-500 bg-gray-50 border-gray-100">

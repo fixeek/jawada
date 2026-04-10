@@ -568,7 +568,17 @@ class KPIResult:
         target_pct = target_info.get("target", 50.0)
         direction = target_info.get("direction", "higher")
 
-        if self.status == "insufficient_data" or self.denominator == 0:
+        # Determine effective status:
+        # - insufficient_data: required fields missing, can't even attempt
+        # - not_applicable: fields present but no eligible patients (0/0) — clinic
+        #   simply doesn't have this patient population (e.g., no asthma in OB/GYN)
+        # - proxy: calculated from partial data
+        # - calculated: full calculation with real patients
+        effective_status = self.status
+        if self.denominator == 0 and effective_status not in ("insufficient_data",):
+            effective_status = "not_applicable"
+
+        if effective_status in ("insufficient_data", "not_applicable"):
             meets_target = None
         elif direction == "lower":
             meets_target = self.percentage <= target_pct
@@ -590,7 +600,7 @@ class KPIResult:
             "numerator": self.numerator,
             "denominator": self.denominator,
             "percentage": self.percentage,
-            "status": self.status,
+            "status": effective_status,
             "missing_fields": self.missing_fields,
             "notes": self.notes,
             "patient_details": self.patient_details[:100],
@@ -1338,21 +1348,28 @@ def run_all_kpis(df: pd.DataFrame, quarter: str = None) -> dict:
 
     # Jawda readiness summary
     kpi_vals = [v for k, v in results["kpis"].items() if not k.startswith("ERROR")]
-    calculable = [k for k in kpi_vals if k["status"] != "insufficient_data"]
+    not_applicable = [k for k in kpi_vals if k["status"] == "not_applicable"]
+    missing_data = [k for k in kpi_vals if k["status"] == "insufficient_data"]
+    # Calculable = has real patients (denominator > 0, not insufficient/not_applicable)
+    calculable = [k for k in kpi_vals if k["status"] not in ("insufficient_data", "not_applicable")]
     meeting = [k for k in calculable if k.get("meets_target") is True]
     below = [k for k in calculable if k.get("meets_target") is False]
-    missing_data = [k for k in kpi_vals if k["status"] == "insufficient_data"]
     proxy = [k for k in kpi_vals if k["status"] == "proxy"]
 
+    # Verdict logic:
+    # - "ready": all calculable KPIs pass, no missing data (N/A is fine)
+    # - "attention": some pass, some don't
+    # - "not_ready": none pass or critical data missing
     results["jawda_summary"] = {
         "total_kpis": len(kpi_vals),
         "calculable": len(calculable),
         "meeting_target": len(meeting),
         "below_target": len(below),
         "missing_data": len(missing_data),
+        "not_applicable": len(not_applicable),
         "proxy_data": len(proxy),
         "readiness_pct": round(len(meeting) / len(calculable) * 100) if calculable else 0,
-        "verdict": "ready" if len(below) == 0 and len(missing_data) == 0
+        "verdict": "ready" if len(calculable) > 0 and len(below) == 0 and len(missing_data) == 0
                    else "attention" if len(meeting) > 0
                    else "not_ready",
     }

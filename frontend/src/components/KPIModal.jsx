@@ -111,12 +111,14 @@ export default function KPIModal({ data, onClose }) {
   const def = OFFICIAL_DEFS[kpiId] || {}
   const isCalculated = kpi.status === 'calculated'
   const isProxy = kpi.status === 'proxy'
+  const isNA = kpi.status === 'not_applicable'
   const direction = kpi.target_direction || 'higher'
   const domain = kpi.domain || ''
 
   // Result color based on target, not just status
   const resultColor = kpi.meets_target === true ? 'text-emerald-700 bg-emerald-50'
     : kpi.meets_target === false ? 'text-red-600 bg-red-50'
+    : isNA ? 'text-blue-600 bg-blue-50'
     : kpi.status === 'insufficient_data' ? 'text-gray-500 bg-gray-50'
     : 'text-amber-700 bg-amber-50'
 
@@ -206,7 +208,22 @@ export default function KPIModal({ data, onClose }) {
               </div>
             </div>
           )}
-          {!isCalculated && !isProxy && (
+          {isNA && (
+            <div className="flex gap-4 bg-blue-50 border border-blue-100 rounded-2xl p-5">
+              <div className="w-9 h-9 bg-white rounded-xl flex items-center justify-center flex-shrink-0 shadow-sm">
+                <Info size={16} className="text-blue-500" />
+              </div>
+              <div>
+                <p className="text-sm font-bold text-blue-800">Not Applicable</p>
+                <p className="text-sm text-blue-700/80 mt-0.5">
+                  Your clinic has no eligible patients for this KPI in this quarter. This is normal for specialised
+                  clinics — for example, an OB/GYN clinic won't have asthma or bronchitis patients.
+                  This KPI is excluded from your readiness score.
+                </p>
+              </div>
+            </div>
+          )}
+          {!isCalculated && !isProxy && !isNA && (
             <div className="flex gap-4 bg-gray-50 border border-gray-100 rounded-2xl p-5">
               <div className="w-9 h-9 bg-white rounded-xl flex items-center justify-center flex-shrink-0 shadow-sm">
                 <AlertTriangle size={16} className="text-gray-400" />
