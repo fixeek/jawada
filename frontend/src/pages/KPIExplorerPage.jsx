@@ -53,14 +53,16 @@ export default function KPIExplorerPage({ onSelectKPI }) {
 
   const history = data?.history || {}
   const quarters = Object.keys(history).sort()
-  const latestQ = quarters[quarters.length - 1]
-  const latestKpis = latestQ ? (history[latestQ]?.kpis || {}) : {}
-  const prevQ = quarters.length > 1 ? quarters[quarters.length - 2] : null
+  const [selectedQ, setSelectedQ] = useState(null)
+  const activeQ = selectedQ || quarters[quarters.length - 1]
+  const activeKpis = activeQ ? (history[activeQ]?.kpis || {}) : {}
+  const activeIdx = quarters.indexOf(activeQ)
+  const prevQ = activeIdx > 0 ? quarters[activeIdx - 1] : null
   const prevKpis = prevQ ? (history[prevQ]?.kpis || {}) : {}
 
   const kpiIds = Object.keys(KPI_META)
   const filtered = kpiIds.filter(id => {
-    const k = latestKpis[id]
+    const k = activeKpis[id]
     if (!k) return filter === 'all' || filter === 'na'
     if (filter === 'passing') return k.meets_target === true
     if (filter === 'failing') return k.meets_target === false
@@ -72,16 +74,30 @@ export default function KPIExplorerPage({ onSelectKPI }) {
     <div className="min-h-screen">
       <div className="max-w-6xl mx-auto px-6 py-10">
         {/* Header */}
-        <div className="flex items-center gap-4 mb-8">
-          <div className="w-14 h-14 bg-gradient-to-br from-blue-50 to-indigo-50 rounded-2xl flex items-center justify-center shadow-card">
-            <BarChart3 size={24} className="text-blue-500" />
+        <div className="flex items-center justify-between mb-8">
+          <div className="flex items-center gap-4">
+            <div className="w-14 h-14 bg-gradient-to-br from-blue-50 to-indigo-50 rounded-2xl flex items-center justify-center shadow-card">
+              <BarChart3 size={24} className="text-blue-500" />
+            </div>
+            <div>
+              <h1 className="text-2xl font-black text-navy-500">KPI Explorer</h1>
+              <p className="text-sm text-gray-500">All 8 DOH Jawda KPIs · V2 2026</p>
+            </div>
           </div>
-          <div>
-            <h1 className="text-2xl font-black text-navy-500">KPI Explorer</h1>
-            <p className="text-sm text-gray-500">
-              {latestQ ? `${latestQ} · All 8 DOH Jawda KPIs` : 'Upload data to see KPI results'}
-            </p>
-          </div>
+          {quarters.length > 0 && (
+            <div className="flex items-center gap-2">
+              {quarters.map(q => (
+                <button key={q} onClick={() => setSelectedQ(q)}
+                  className={`text-xs font-bold px-3 py-1.5 rounded-lg transition-all ${
+                    q === activeQ
+                      ? 'bg-navy-500 text-white shadow-card'
+                      : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
+                  }`}>
+                  {q}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
 
         {/* Filter bar */}
@@ -97,14 +113,12 @@ export default function KPIExplorerPage({ onSelectKPI }) {
               {f.label}
             </button>
           ))}
-          {latestQ && (
-            <span className="ml-auto text-[10px] text-gray-400 font-medium">
-              {quarters.length} quarter{quarters.length > 1 ? 's' : ''} of history
-            </span>
-          )}
+          <span className="ml-auto text-[10px] text-gray-400 font-medium">
+            {quarters.length} quarter{quarters.length > 1 ? 's' : ''} · viewing {activeQ || 'none'}
+          </span>
         </div>
 
-        {!latestQ ? (
+        {!activeQ ? (
           <div className="bg-white rounded-2xl border border-gray-100 shadow-card p-12 text-center">
             <BarChart3 size={40} className="text-gray-200 mx-auto mb-4" />
             <p className="text-sm font-bold text-navy-500 mb-1">No KPI data yet</p>
@@ -114,7 +128,7 @@ export default function KPIExplorerPage({ onSelectKPI }) {
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             {filtered.map(id => {
               const meta = KPI_META[id]
-              const k = latestKpis[id]
+              const k = activeKpis[id]
               const prev = prevKpis[id]
               const isNA = !k || k.status === 'not_applicable'
               const isInsuff = k?.status === 'insufficient_data'
