@@ -32,12 +32,34 @@ def _result_label(kpi):
     return "PROXY"
 
 
+def _sanitize(text):
+    """Replace unicode chars that Helvetica can't render."""
+    return (str(text)
+            .replace('\u2014', '-')   # em dash
+            .replace('\u2013', '-')   # en dash
+            .replace('\u2018', "'")   # left single quote
+            .replace('\u2019', "'")   # right single quote
+            .replace('\u201c', '"')   # left double quote
+            .replace('\u201d', '"')   # right double quote
+            .replace('\u2022', '*')   # bullet
+            .replace('\u2026', '...')  # ellipsis
+            .replace('\u2264', '<=')  # <=
+            .replace('\u2265', '>=')  # >=
+            )
+
+
 class JawdaPDF(FPDF):
     def __init__(self, facility_name, quarter):
         super().__init__()
-        self.facility_name = facility_name
-        self.quarter = quarter
+        self.facility_name = _sanitize(facility_name)
+        self.quarter = _sanitize(quarter)
         self.set_auto_page_break(auto=True, margin=20)
+
+    def cell(self, w, h=0, txt='', *args, **kwargs):
+        super().cell(w, h, _sanitize(txt), *args, **kwargs)
+
+    def multi_cell(self, w, h, txt='', *args, **kwargs):
+        super().multi_cell(w, h, _sanitize(txt), *args, **kwargs)
 
     def header(self):
         # Navy header bar
