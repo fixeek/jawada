@@ -79,6 +79,7 @@ def init_db():
         -- Add columns to existing uploads table if they don't exist
         DO $$
         BEGIN
+            BEGIN ALTER TABLE uploads ADD COLUMN file_details JSONB DEFAULT '{}'; EXCEPTION WHEN duplicate_column THEN END;
             BEGIN ALTER TABLE uploads ADD COLUMN col_mapping JSONB DEFAULT '{}'; EXCEPTION WHEN duplicate_column THEN END;
             BEGIN ALTER TABLE uploads ADD COLUMN data_quality JSONB DEFAULT '{}'; EXCEPTION WHEN duplicate_column THEN END;
             BEGIN ALTER TABLE uploads ADD COLUMN calculation_time_ms INTEGER DEFAULT 0; EXCEPTION WHEN duplicate_column THEN END;
@@ -147,6 +148,14 @@ def init_db():
             BEGIN ALTER TABLE users ADD COLUMN must_change_password BOOLEAN DEFAULT FALSE; EXCEPTION WHEN duplicate_column THEN END;
             BEGIN ALTER TABLE users ADD COLUMN updated_at TIMESTAMP DEFAULT NOW(); EXCEPTION WHEN duplicate_column THEN END;
             UPDATE users SET email_lower = LOWER(email) WHERE email_lower IS NULL;
+        END $$;
+
+        -- Ensure email_lower has a unique index (may be missing if column was added via ALTER)
+        DO $$
+        BEGIN
+            IF NOT EXISTS (SELECT 1 FROM pg_indexes WHERE indexname = 'users_email_lower_key') THEN
+                CREATE UNIQUE INDEX users_email_lower_key ON users(email_lower);
+            END IF;
         END $$;
 
         CREATE TABLE IF NOT EXISTS audit_log (
