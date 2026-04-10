@@ -1178,9 +1178,15 @@ async def validate_multi(
             primary_fno = primary_map.get("file_no")
 
             if primary_pid or primary_fno:
-                primary_id_col = primary_fno or primary_pid
-                primary_ids = set(df_primary[primary_id_col].dropna().astype(str).str.strip()
-                                  .str.replace(r'\.0$', '', regex=True))
+                # Build all primary ID sets for cross-checking
+                def _id_set(df, col):
+                    if col and col in df.columns:
+                        return set(df[col].dropna().astype(str).str.strip()
+                                   .str.replace(r'\.0$', '', regex=True))
+                    return set()
+
+                primary_pid_ids = _id_set(df_primary, primary_pid)
+                primary_fno_ids = _id_set(df_primary, primary_fno)
 
                 for slot_name, slot_label, affects in [
                     ("time_data", "Time Data", "OMC003 (wait time)"),
@@ -1191,28 +1197,44 @@ async def validate_multi(
                             df_other = load_file(file_paths[slot_name])
                             df_other = normalise_df(df_other)
                             other_map = map_columns(df_other)
-                            other_id_col = other_map.get("file_no") or other_map.get("patient_id")
-                            if other_id_col:
-                                other_ids = set(df_other[other_id_col].dropna().astype(str).str.strip()
-                                               .str.replace(r'\.0$', '', regex=True))
-                                overlap = len(primary_ids & other_ids)
-                                overlap_pct = round(overlap / len(primary_ids) * 100) if primary_ids else 0
-                                if overlap_pct < 10:
-                                    id_warnings.append({
-                                        "file": slot_label,
-                                        "severity": "error",
-                                        "message": f"{slot_label} patient IDs do not match KPI Excel ({overlap}/{len(primary_ids)} overlap = {overlap_pct}%). "
-                                                   f"This will affect {affects}. "
-                                                   f"KPI Excel {primary_id_col} samples: {list(primary_ids)[:3]}. "
-                                                   f"{slot_label} {other_id_col} samples: {list(other_ids)[:3]}. "
-                                                   f"Ensure the same patient ID format is used across all files."
-                                    })
-                                elif overlap_pct < 50:
-                                    id_warnings.append({
-                                        "file": slot_label,
-                                        "severity": "warning",
-                                        "message": f"{slot_label} has partial ID overlap with KPI Excel ({overlap_pct}%). Some patient data may not merge correctly."
-                                    })
+                            other_fno_ids = _id_set(df_other, other_map.get("file_no"))
+                            other_pid_ids = _id_set(df_other, other_map.get("patient_id"))
+
+                            # Try all 4 combinations, pick the best overlap
+                            best_overlap = 0
+                            best_total = 1
+                            best_desc = ""
+                            for p_ids, p_label in [(primary_fno_ids, "file_no"), (primary_pid_ids, "mrn")]:
+                                for o_ids, o_label in [(other_fno_ids, "file_no"), (other_pid_ids, "mrn")]:
+                                    if p_ids and o_ids:
+                                        ov = len(p_ids & o_ids)
+                                        if ov > best_overlap:
+                                            best_overlap = ov
+                                            best_total = len(p_ids)
+                                            best_desc = f"KPI Excel {p_label} → {slot_label} {o_label}"
+
+                            overlap_pct = round(best_overlap / best_total * 100) if best_total else 0
+
+                            if overlap_pct < 10:
+                                other_sample_col = other_map.get("file_no") or other_map.get("patient_id")
+                                other_samples = list(other_fno_ids or other_pid_ids)[:3]
+                                primary_samples = list(primary_fno_ids or primary_pid_ids)[:3]
+                                id_warnings.append({
+                                    "file": slot_label,
+                                    "severity": "error",
+                                    "message": f"{slot_label} patient IDs do not match KPI Excel ({best_overlap}/{best_total} overlap = {overlap_pct}%). "
+                                               f"This will affect {affects}. "
+                                               f"KPI Excel samples: {primary_samples}. "
+                                               f"{slot_label} samples: {other_samples}. "
+                                               f"Ensure the same patient ID format is used across all files."
+                                })
+                            elif overlap_pct < 50:
+                                id_warnings.append({
+                                    "file": slot_label,
+                                    "severity": "warning",
+                                    "message": f"{slot_label} has partial ID overlap with KPI Excel ({overlap_pct}% via {best_desc}). Some patient data may not merge correctly."
+                                })
+                            # else: good overlap, no warning needed
                         except Exception as e:
                             log.error(f"ID validation for {slot_name}: {e}")
         except Exception as e:
