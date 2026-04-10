@@ -1,24 +1,19 @@
 import { useState } from 'react'
 import { TrendingUp, TrendingDown, Minus } from 'lucide-react'
 
-/* ── Multi-Quarter KPI Trend Charts ────────────────────────────────────────── */
-/* Renders a small SVG line chart per KPI showing % across all stored quarters,
-   with target line, current value, and direction arrow. Pure SVG, no deps.    */
-
 const KPI_ORDER = ['OMC001','OMC002','OMC003','OMC004','OMC005','OMC006','OMC007','OMC008']
 
-function MiniChart({ points, target, direction, width = 220, height = 70 }) {
-  const padX = 8, padY = 10
+function MiniChart({ points, target, direction, labels, width = 220, height = 80 }) {
+  const padX = 24, padY = 12, bottomPad = 16
   const innerW = width - padX * 2
-  const innerH = height - padY * 2
+  const innerH = height - padY - bottomPad
 
-  // Use 0–100 scale always, so target line is comparable
   const xs = points.map((_, i) => points.length === 1
     ? padX + innerW / 2
     : padX + (i * innerW) / (points.length - 1))
   const ys = points.map(p => p == null ? null : padY + innerH - (Math.min(100, Math.max(0, p)) / 100) * innerH)
 
-  // Build path string skipping nulls
+  // Build path
   let d = ''
   let started = false
   xs.forEach((x, i) => {
@@ -36,18 +31,15 @@ function MiniChart({ points, target, direction, width = 220, height = 70 }) {
     <svg width="100%" height={height} viewBox={`0 0 ${width} ${height}`} className="overflow-visible">
       {/* Target line */}
       {targetY != null && (
-        <line
-          x1={padX} x2={width - padX}
-          y1={targetY} y2={targetY}
-          stroke="#14B8A6"
-          strokeWidth="1"
-          strokeDasharray="3 3"
-          opacity="0.6"
-        />
+        <>
+          <line x1={padX} x2={width - padX} y1={targetY} y2={targetY}
+            stroke="#14B8A6" strokeWidth="1" strokeDasharray="3 3" opacity="0.5" />
+          <text x={width - padX + 3} y={targetY + 3} fontSize="7" fill="#14B8A6" opacity="0.7">{target}%</text>
+        </>
       )}
       {/* Trend line */}
       {d && <path d={d} fill="none" stroke="#0D2137" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />}
-      {/* Dots */}
+      {/* Dots + value labels */}
       {xs.map((x, i) => {
         const y = ys[i]
         if (y == null) return null
@@ -58,15 +50,25 @@ function MiniChart({ points, target, direction, width = 220, height = 70 }) {
         const fill = passing == null ? '#9CA3AF' : passing ? '#10B981' : '#EF4444'
         const isLast = i === xs.length - 1
         return (
-          <circle
-            key={i}
-            cx={x}
-            cy={y}
-            r={isLast ? 3.2 : 2.4}
-            fill={fill}
-            stroke="white"
-            strokeWidth={isLast ? 1.5 : 1}
-          />
+          <g key={i}>
+            <circle cx={x} cy={y} r={isLast ? 3.5 : 2.5}
+              fill={fill} stroke="white" strokeWidth={isLast ? 1.5 : 1} />
+            {/* Value on hover area — show for first, last, and if only a few points */}
+            {(i === 0 || isLast || points.length <= 4) && (
+              <text x={x} y={y - 6} textAnchor="middle" fontSize="7" fontWeight="700"
+                fill={fill} opacity="0.8">{pct}%</text>
+            )}
+          </g>
+        )
+      })}
+      {/* Quarter labels along bottom */}
+      {labels.map((label, i) => {
+        // Show first, last, and every other for many quarters
+        const show = i === 0 || i === labels.length - 1 || (labels.length <= 6) || (i % 2 === 0)
+        if (!show) return null
+        return (
+          <text key={i} x={xs[i]} y={height - 2} textAnchor="middle"
+            fontSize="7" fill="#9CA3AF" fontWeight="500">{label}</text>
         )
       })}
     </svg>
@@ -74,20 +76,20 @@ function MiniChart({ points, target, direction, width = 220, height = 70 }) {
 }
 
 export default function TrendChart({ history, currentQuarter }) {
-  const [selectedKpi, setSelectedKpi] = useState(null)
   if (!history) return null
 
   const quarters = Object.keys(history).sort()
-  if (quarters.length < 2) return null  // need 2+ quarters to make a trend
+  if (quarters.length < 2) return null
 
-  // Build per-KPI series across quarters
+  // Short labels: "Q2 25" instead of "Q2 2025"
+  const shortLabels = quarters.map(q => q.replace(/20(\d{2})/, '$1'))
+
   const series = KPI_ORDER.map(id => {
     const points = quarters.map(q => {
       const k = history[q]?.kpis?.[id]
       if (!k || k.denominator === 0 || k.status === 'insufficient_data') return null
       return k.percentage
     })
-    // Pull title/target/direction from first quarter that has it
     const meta = quarters
       .map(q => history[q]?.kpis?.[id])
       .find(k => k && k.title)
@@ -99,36 +101,34 @@ export default function TrendChart({ history, currentQuarter }) {
     const delta = (first != null && last != null) ? Math.round((last - first) * 10) / 10 : null
     const direction = meta.target_direction || 'higher'
     const improved = delta != null && delta !== 0 && (direction === 'lower' ? delta < 0 : delta > 0)
-    const declined = delta != null && delta !== 0 && !improved
     const passing = last != null && meta.target != null
       ? (direction === 'lower' ? last <= meta.target : last >= meta.target)
       : null
 
     return {
-      id,
-      title: meta.title,
-      target: meta.target,
-      direction,
-      points,
-      last,
-      delta,
-      improved,
-      declined,
-      passing,
+      id, title: meta.title, target: meta.target, direction,
+      points, last, delta, improved, passing,
       hasData: valid.length > 0,
     }
   }).filter(Boolean)
 
   return (
     <div className="bg-white rounded-2xl border border-gray-100 shadow-card p-5">
-      <div className="flex items-baseline justify-between mb-4">
-        <p className="text-[11px] text-gray-500">
-          % across {quarters.length} quarter{quarters.length > 1 ? 's' : ''} · teal dashed line = DOH target
-        </p>
-        <p className="text-[10px] text-gray-400 font-medium">
-          {quarters[0]} → {quarters[quarters.length - 1]}
-        </p>
+      {/* Header with quarter chips */}
+      <div className="flex items-center justify-between mb-1">
+        <div className="flex flex-wrap items-center gap-1.5">
+          {quarters.map(q => (
+            <span key={q} className={`text-[9px] font-bold px-2 py-0.5 rounded ${
+              q === currentQuarter
+                ? 'bg-navy-500 text-white'
+                : 'bg-gray-100 text-gray-500'
+            }`}>{q}</span>
+          ))}
+        </div>
       </div>
+      <p className="text-[10px] text-gray-400 mb-4">
+        Each KPI's % across quarters · teal dashed line = DOH target
+      </p>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {series.map(s => (
@@ -147,9 +147,9 @@ export default function TrendChart({ history, currentQuarter }) {
             </div>
 
             {s.hasData ? (
-              <MiniChart points={s.points} target={s.target} direction={s.direction} />
+              <MiniChart points={s.points} target={s.target} direction={s.direction} labels={shortLabels} />
             ) : (
-              <div className="h-[70px] flex items-center justify-center">
+              <div className="h-[80px] flex items-center justify-center">
                 <p className="text-[9px] text-gray-400">No data yet</p>
               </div>
             )}
@@ -171,13 +171,6 @@ export default function TrendChart({ history, currentQuarter }) {
               </p>
             </div>
           </div>
-        ))}
-      </div>
-
-      {/* Quarter labels strip */}
-      <div className="mt-4 pt-3 border-t border-gray-50 flex items-center justify-between text-[9px] text-gray-400 font-medium">
-        {quarters.map(q => (
-          <span key={q} className={q === currentQuarter ? 'text-navy-500 font-bold' : ''}>{q}</span>
         ))}
       </div>
     </div>
