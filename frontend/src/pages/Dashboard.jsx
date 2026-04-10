@@ -535,8 +535,34 @@ function ExportButtons({ results, onPrint }) {
     a.click()
   }
 
+  const [pdfLoading, setPdfLoading] = useState(false)
+  async function downloadPDF() {
+    setPdfLoading(true)
+    try {
+      const form = new FormData()
+      form.append('quarter', results.quarter)
+      const res = await axios.post(`${SUBMIT_BASE}/api/clinic/report/pdf`, form, { responseType: 'blob' })
+      const url = URL.createObjectURL(res.data)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `Jawda-KPI-${results.facility?.replace(/\s/g,'-')}-${results.quarter?.replace(/\s/g,'-')}.pdf`
+      a.click()
+      URL.revokeObjectURL(url)
+    } catch (err) {
+      alert('PDF generation failed. Please try again.')
+    } finally {
+      setPdfLoading(false)
+    }
+  }
+
   return (
     <div className="flex items-center gap-2">
+      <button onClick={downloadPDF} disabled={pdfLoading}
+        className="flex items-center gap-2 text-xs px-4 py-2 bg-navy-500 hover:bg-navy-400
+          rounded-lg text-white font-bold transition-all shadow-card disabled:opacity-50">
+        {pdfLoading ? <span className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : <Download size={13} />}
+        {pdfLoading ? 'Generating...' : 'PDF Report'}
+      </button>
       <button onClick={onPrint}
         className="flex items-center gap-2 text-xs px-3 py-2 bg-gray-50 hover:bg-gray-100
           rounded-lg text-gray-600 hover:text-navy-500 font-medium transition-all border border-gray-200">

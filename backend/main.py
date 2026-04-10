@@ -797,6 +797,66 @@ def clinic_dashboard(user: dict = Depends(get_current_user)):
     }
 
 
+@app.post("/api/clinic/report/pdf")
+def generate_pdf_report(request: Request, quarter: str = Form(...),
+                         user: dict = Depends(get_current_user)):
+    """Generate a branded PDF report for a quarter."""
+    from report_generator import generate_pdf
+    from fastapi.responses import Response
+
+    facility_id = user.get("facility_id")
+    facility_name = user.get("facility_name", "Clinic")
+
+    if not facility_id:
+        raise HTTPException(400, "No facility associated with your account")
+
+    history = {}
+    if USE_DB:
+        try:
+            history = get_facility_history_by_id(facility_id)
+        except Exception as e:
+            log.error(f"Failed to load history for PDF: {e}")
+
+    if quarter not in history:
+        raise HTTPException(404, f"No data found for {quarter}")
+
+    q_data = history[quarter]
+    kpis = q_data.get("kpis", {})
+    summary = q_data.get("jawda_summary", {})
+
+    try:
+        pdf_bytes, report_hash = generate_pdf(
+            facility_name=facility_name,
+            quarter=quarter,
+            kpis=kpis,
+            summary=summary,
+            history=history,
+            generated_by=user.get("full_name") or user.get("email", ""),
+        )
+    except Exception as e:
+        log.error(f"PDF generation failed: {e}")
+        raise HTTPException(500, f"PDF generation failed: {str(e)}")
+
+    try:
+        log_audit(
+            facility_id=facility_id,
+            action="report_generated",
+            quarter=quarter,
+            details={"format": "pdf", "hash": report_hash},
+            user_email=user.get("email"),
+            ip_address=_get_client_ip(request),
+        )
+    except Exception as e:
+        log.error(f"Audit log for report: {e}")
+
+    filename = f"Jawda-KPI-{facility_name.replace(' ', '-')}-{quarter.replace(' ', '-')}.pdf"
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
 @app.post("/api/clinic/submission")
 def update_submission(req: UpdateSubmissionRequest, request: Request,
                       user: dict = Depends(get_current_user)):
