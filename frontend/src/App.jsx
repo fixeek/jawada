@@ -18,6 +18,7 @@ import AdminHealthPage from './pages/AdminHealthPage'
 import UsersPage from './pages/UsersPage'
 import SettingsPage from './pages/SettingsPage'
 import KPIExplorerPage from './pages/KPIExplorerPage'
+import KPIDetailPage from './pages/KPIDetailPage'
 import SubmissionsPage from './pages/SubmissionsPage'
 import ReportsPage from './pages/ReportsPage'
 import { AuthProvider, useAuth, ROLES, ROLE_LABELS, isSuperAdmin, canManageUsers, canUpload } from './utils/auth'
@@ -238,6 +239,7 @@ function AppShell() {
   const [results, setResults] = useState(null)
   const [collapsed, setCollapsed] = useState(false)
   const [selectedClinic, setSelectedClinic] = useState(null)
+  const [selectedKPI, setSelectedKPI] = useState(null)
   const [clinicLoading, setClinicLoading] = useState(false)
   const [clinicHistory, setClinicHistory] = useState(null) // { has_data, quarters, history, latest }
 
@@ -282,6 +284,12 @@ function AppShell() {
     return null
   }
 
+  function navigate(pageId) {
+    setPage(pageId)
+    setSelectedKPI(null)
+    setSelectedClinic(null)
+  }
+
   function handleResults(data) {
     setResults(data)
     setPage('dashboard')
@@ -296,7 +304,7 @@ function AppShell() {
     if (isSuperAdmin(user)) {
       switch (page) {
         case 'overview':
-          return <AdminOverviewPage onNavigate={setPage} />
+          return <AdminOverviewPage onNavigate={navigate} />
         case 'clinics':
           return selectedClinic
             ? <AdminClinicDetailPage facility={selectedClinic} onBack={() => setSelectedClinic(null)} />
@@ -308,7 +316,7 @@ function AppShell() {
         case 'settings':
           return <SettingsPage user={user} />
         default:
-          return <AdminOverviewPage onNavigate={setPage} />
+          return <AdminOverviewPage onNavigate={navigate} />
       }
     }
 
@@ -399,7 +407,10 @@ function AppShell() {
           : <div className="p-10 text-center text-gray-500">You don't have permission to upload data.</div>
 
       case 'kpi-explorer':
-        return <KPIExplorerPage onSelectKPI={id => { /* TODO: navigate to detail page */ }} />
+        if (selectedKPI) {
+          return <KPIDetailPage kpiId={selectedKPI} onBack={() => setSelectedKPI(null)} />
+        }
+        return <KPIExplorerPage onSelectKPI={id => setSelectedKPI(id)} />
 
       case 'submissions':
         return <SubmissionsPage />
@@ -432,7 +443,7 @@ function AppShell() {
       <div className="hidden lg:flex">
         <Sidebar
           active={page}
-          onNavigate={setPage}
+          onNavigate={navigate}
           collapsed={collapsed}
           onCollapse={() => setCollapsed(!collapsed)}
           user={user}
@@ -444,7 +455,7 @@ function AppShell() {
       </div>
 
       <div className="lg:hidden">
-        <MobileNav active={page} onNavigate={setPage} user={user} onLogout={logout} />
+        <MobileNav active={page} onNavigate={navigate} user={user} onLogout={logout} />
         <main className="min-h-screen">
           {renderPage()}
         </main>
