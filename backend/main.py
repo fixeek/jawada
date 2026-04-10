@@ -35,7 +35,8 @@ try:
                           get_platform_stats, get_platform_audit_log, get_system_health,
                           create_notification, get_notifications, mark_notifications_read,
                           get_unread_count, generate_deadline_notifications,
-                          create_invitation, get_invitation, use_invitation)
+                          create_invitation, get_invitation, use_invitation,
+                          get_all_clinics_kpi_summary)
     init_db()
     USE_DB = True
     log.info("✓ Connected to PostgreSQL")
@@ -593,6 +594,16 @@ def change_password(req: ChangePasswordRequest, user: dict = Depends(get_current
 def admin_platform_stats(user: dict = Depends(require_super_admin)):
     """Super admin: platform-wide statistics."""
     return get_platform_stats()
+
+
+@app.get("/api/admin/clinics-kpi")
+def admin_clinics_kpi(user: dict = Depends(require_super_admin)):
+    """Super admin: KPI summary per clinic."""
+    try:
+        return {"clinics": get_all_clinics_kpi_summary()}
+    except Exception as e:
+        log.error(f"Clinics KPI summary failed: {e}")
+        return {"clinics": []}
 
 
 # ── Invitations ─────────────────────────────────────────────────────

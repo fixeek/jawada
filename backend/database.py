@@ -596,6 +596,29 @@ def get_platform_audit_log(limit: int = 100) -> list:
     return result
 
 
+def get_all_clinics_kpi_summary() -> list:
+    """Get latest KPI summary per clinic for the multi-clinic dashboard."""
+    with db_cursor(dict_cursor=True) as (conn, cur):
+        cur.execute("""
+            SELECT DISTINCT ON (f.id)
+                f.id, f.name, f.license_no, f.is_active,
+                js.quarter, js.meeting_target, js.below_target,
+                js.not_applicable, js.missing_data, js.readiness_pct, js.verdict,
+                (SELECT MAX(uploaded_at) FROM uploads WHERE facility_id = f.id) as last_upload,
+                (SELECT COUNT(*) FROM users WHERE facility_id = f.id AND is_active = TRUE) as user_count
+            FROM facilities f
+            LEFT JOIN jawda_summaries js ON js.facility_id = f.id
+            WHERE f.is_active = TRUE
+            ORDER BY f.id, js.quarter DESC NULLS LAST
+        """)
+        result = []
+        for r in cur.fetchall():
+            entry = dict(r)
+            entry['last_upload'] = entry['last_upload'].isoformat() if entry.get('last_upload') else None
+            result.append(entry)
+        return result
+
+
 def get_system_health() -> dict:
     """Super admin: check database health and stats."""
     conn = get_conn()

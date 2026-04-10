@@ -92,6 +92,7 @@ function HealthPill({ icon: Icon, label, status, sub }) {
 export default function AdminOverviewPage({ onNavigate }) {
   const { user } = useAuth()
   const [stats, setStats] = useState(null)
+  const [clinicsKpi, setClinicsKpi] = useState([])
   const [loading, setLoading] = useState(true)
   const [healthStatus, setHealthStatus] = useState('healthy')
 
@@ -99,9 +100,11 @@ export default function AdminOverviewPage({ onNavigate }) {
     Promise.all([
       axios.get(`${BASE}/api/admin/stats`).then(r => r.data).catch(() => null),
       axios.get(`${BASE}/health`).then(r => r.data).catch(() => null),
-    ]).then(([s, h]) => {
+      axios.get(`${BASE}/api/admin/clinics-kpi`).then(r => r.data).catch(() => ({ clinics: [] })),
+    ]).then(([s, h, ck]) => {
       setStats(s)
       setHealthStatus(h ? 'healthy' : 'error')
+      setClinicsKpi(ck?.clinics || [])
       setLoading(false)
     })
   }, [])
@@ -322,6 +325,69 @@ export default function AdminOverviewPage({ onNavigate }) {
               </div>
             </div>
           </>
+        )}
+
+        {/* Clinic KPI Summary — per-clinic cards */}
+        {clinicsKpi.length > 0 && (
+          <div className="mt-8">
+            <h2 className="text-sm font-black text-navy-500 mb-4">Clinic KPI Performance</h2>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+              {clinicsKpi.map(c => {
+                const verdictColors = {
+                  ready: 'bg-emerald-50 border-emerald-200 text-emerald-700',
+                  attention: 'bg-amber-50 border-amber-200 text-amber-700',
+                  not_ready: 'bg-red-50 border-red-200 text-red-600',
+                }
+                const verdictLabels = { ready: 'Ready', attention: 'Attention', not_ready: 'Not Ready' }
+                const lastUpload = c.last_upload ? (() => {
+                  const d = new Date(c.last_upload)
+                  const diff = Math.floor((Date.now() - d) / (1000*60*60*24))
+                  return diff === 0 ? 'Today' : diff === 1 ? 'Yesterday' : `${diff}d ago`
+                })() : 'Never'
+
+                return (
+                  <div key={c.id} className="bg-white rounded-2xl border border-gray-100 shadow-card p-5 hover:shadow-elevated transition-all">
+                    <div className="flex items-start justify-between mb-3">
+                      <div>
+                        <h3 className="text-sm font-black text-navy-500">{c.name}</h3>
+                        {c.license_no && <p className="text-[9px] text-gray-400">{c.license_no}</p>}
+                      </div>
+                      {c.verdict && (
+                        <span className={`text-[9px] font-bold px-2 py-0.5 rounded border ${verdictColors[c.verdict] || 'bg-gray-50 text-gray-500'}`}>
+                          {verdictLabels[c.verdict] || '—'}
+                        </span>
+                      )}
+                    </div>
+                    {c.quarter ? (
+                      <>
+                        <div className="flex items-center gap-4 mb-3">
+                          <div>
+                            <div className="text-2xl font-black text-navy-500">{c.meeting_target || 0}/8</div>
+                            <div className="text-[9px] text-gray-500 font-bold uppercase">KPIs Passing</div>
+                          </div>
+                          <div className="flex-1 h-2 bg-gray-100 rounded-full overflow-hidden">
+                            <div className="h-full bg-gradient-to-r from-teal-400 to-emerald-400 rounded-full"
+                              style={{ width: `${(c.readiness_pct || 0)}%` }} />
+                          </div>
+                          <span className="text-xs font-bold text-navy-500">{c.readiness_pct || 0}%</span>
+                        </div>
+                        <div className="flex items-center justify-between text-[10px] text-gray-500">
+                          <span>{c.quarter}</span>
+                          <span>{c.user_count || 0} users</span>
+                          <span>Updated {lastUpload}</span>
+                        </div>
+                      </>
+                    ) : (
+                      <div className="py-4 text-center">
+                        <p className="text-xs text-gray-400 font-medium">No data uploaded yet</p>
+                        <p className="text-[9px] text-gray-300">Updated {lastUpload}</p>
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
+            </div>
+          </div>
         )}
       </div>
     </div>
