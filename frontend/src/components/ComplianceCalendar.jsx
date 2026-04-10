@@ -31,8 +31,17 @@ export default function ComplianceCalendar({ history, onSelectQuarter }) {
   const now = new Date()
   const currentYear = now.getFullYear()
 
-  // Show 2 years
-  const years = [currentYear - 1, currentYear]
+  // Determine years to show: current year + any year that has data
+  const dataYears = new Set()
+  if (history) {
+    for (const q of Object.keys(history)) {
+      const match = q.match(/Q\d\s+(\d{4})/)
+      if (match) dataYears.add(parseInt(match[1]))
+    }
+  }
+  dataYears.add(currentYear)
+  dataYears.add(currentYear - 1)
+  const years = [...dataYears].sort()
 
   return (
     <div className="bg-white rounded-2xl border border-gray-100 shadow-card p-5">

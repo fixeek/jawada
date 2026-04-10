@@ -175,6 +175,30 @@ results_store = {}         # run_id -> results
 facility_history = {}      # facility_name_lower -> { quarter -> results }
 # Temp store for validated files awaiting processing
 validated_files = {}
+SESSION_MAX_AGE_MINUTES = 30
+
+
+def _cleanup_stale_sessions():
+    """Remove validated file sessions older than SESSION_MAX_AGE_MINUTES.
+    Called before each new validate to prevent unbounded growth."""
+    now = datetime.now()
+    stale = []
+    for sid, session in validated_files.items():
+        try:
+            created = datetime.fromisoformat(session.get("created", ""))
+            if (now - created).total_seconds() > SESSION_MAX_AGE_MINUTES * 60:
+                stale.append(sid)
+        except:
+            stale.append(sid)
+    for sid in stale:
+        session = validated_files.pop(sid, {})
+        for p in list(session.get("paths", {}).values()) + list(session.get("prev_paths", {}).values()):
+            try:
+                os.unlink(p)
+            except:
+                pass
+    if stale:
+        log.info(f"Cleaned up {len(stale)} stale upload sessions")
 
 
 def _save_to_history(facility: str, quarter: str, results: dict):
@@ -1066,6 +1090,7 @@ async def validate_multi(
     prev_eclaims: Optional[UploadFile] = File(None),
 ):
     """Validate up to 8 files — 4 current quarter + 4 previous quarter for comparison."""
+    _cleanup_stale_sessions()
 
     has_current = kpi_data or visit_details or time_data or eclaims
     has_previous = prev_kpi_data or prev_visit_details or prev_time_data or prev_eclaims
@@ -1261,6 +1286,16 @@ async def calculate_multi(
                 time_file_col = time_col_map.get("file_no") or time_col_map.get("patient_id")
                 primary_file_col = col_map.get("file_no") or col_map.get("patient_id")
 
+                # Debug: log sample IDs from both sides to diagnose mismatches
+                if time_file_col and primary_file_col:
+                    try:
+                        time_ids = df_time_norm[time_file_col].dropna().astype(str).str.strip().head(5).tolist()
+                        primary_ids = df_merged[primary_file_col].dropna().astype(str).str.strip().head(5).tolist()
+                        log.info(f"  Time Data join debug: time_col='{time_file_col}' samples={time_ids}, "
+                                 f"primary_col='{primary_file_col}' samples={primary_ids}")
+                    except Exception as e:
+                        log.info(f"  Time Data join debug error: {e}")
+
                 matched = 0
                 if time_file_col and primary_file_col:
                     # Strategy 1+2: exact then normalized join on file_no
@@ -1296,6 +1331,13 @@ async def calculate_multi(
             visit_pid = visit_col_map.get("patient_id")
 
             if visit_pid and pid_col:
+                try:
+                    visit_ids = df_visit_norm[visit_pid].dropna().astype(str).str.strip().head(5).tolist()
+                    primary_pids = df_merged[pid_col].dropna().astype(str).str.strip().head(5).tolist()
+                    log.info(f"  Visit Details join debug: visit_col='{visit_pid}' samples={visit_ids}, "
+                             f"primary_col='{pid_col}' samples={primary_pids}")
+                except:
+                    pass
                 cols_to_bring = []
                 for field_key in ["icd_code", "icd_secondary", "diabetes_flag", "htn_flag",
                                   "pregnancy", "bp_reading", "bmi", "hba1c", "drug_name",
@@ -1352,6 +1394,14 @@ async def calculate_multi(
                 if non_null == 0:
                     merge_diagnostics.append(f"WARNING: {field} column exists but has no data after merge — {kpi_label} will show 0/0")
                     log.warning(f"Post-merge: {field} column all NaN — {kpi_label} affected")
+
+        # Memory check after merge
+        import sys
+        merged_mb = df_merged.memory_usage(deep=True).sum() / (1024 * 1024)
+        log.info(f"Merged dataframe: {len(df_merged)} rows x {len(df_merged.columns)} cols, {merged_mb:.1f} MB in memory")
+        if merged_mb > 500:
+            log.warning(f"Large merged dataframe: {merged_mb:.0f} MB — may cause memory pressure")
+            merge_diagnostics.append(f"WARNING: Large dataset ({merged_mb:.0f} MB in memory) — processing may be slow")
 
         log.info(f"Merge diagnostics: {merge_diagnostics}")
 
