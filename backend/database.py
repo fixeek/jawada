@@ -124,6 +124,12 @@ def init_db():
             UNIQUE(facility_id, quarter)
         );
 
+        -- Add not_applicable column to jawda_summaries if missing
+        DO $$
+        BEGIN
+            BEGIN ALTER TABLE jawda_summaries ADD COLUMN not_applicable INTEGER DEFAULT 0; EXCEPTION WHEN duplicate_column THEN END;
+        END $$;
+
         CREATE TABLE IF NOT EXISTS users (
             id SERIAL PRIMARY KEY,
             email VARCHAR(255) NOT NULL UNIQUE,
@@ -358,9 +364,9 @@ def save_results(facility_name: str, results: dict) -> int:
     cur.execute("""
         INSERT INTO jawda_summaries
             (upload_id, facility_id, quarter, total_kpis, calculable,
-             meeting_target, below_target, missing_data, proxy_data,
+             meeting_target, below_target, missing_data, not_applicable, proxy_data,
              readiness_pct, verdict)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         ON CONFLICT (facility_id, quarter)
         DO UPDATE SET
             upload_id = EXCLUDED.upload_id,
@@ -368,6 +374,7 @@ def save_results(facility_name: str, results: dict) -> int:
             meeting_target = EXCLUDED.meeting_target,
             below_target = EXCLUDED.below_target,
             missing_data = EXCLUDED.missing_data,
+            not_applicable = EXCLUDED.not_applicable,
             proxy_data = EXCLUDED.proxy_data,
             readiness_pct = EXCLUDED.readiness_pct,
             verdict = EXCLUDED.verdict,
@@ -376,7 +383,8 @@ def save_results(facility_name: str, results: dict) -> int:
         upload_id, facility_id, quarter,
         summary.get("total_kpis", 8), summary.get("calculable", 0),
         summary.get("meeting_target", 0), summary.get("below_target", 0),
-        summary.get("missing_data", 0), summary.get("proxy_data", 0),
+        summary.get("missing_data", 0), summary.get("not_applicable", 0),
+        summary.get("proxy_data", 0),
         summary.get("readiness_pct", 0), summary.get("verdict", "not_ready")
     ))
 
@@ -617,7 +625,7 @@ def get_facility_history(facility_name: str) -> dict:
     # Get summaries
     cur.execute("""
         SELECT quarter, total_kpis, calculable, meeting_target, below_target,
-               missing_data, proxy_data, readiness_pct, verdict
+               missing_data, not_applicable, proxy_data, readiness_pct, verdict
         FROM jawda_summaries
         WHERE facility_id = %s
         ORDER BY quarter
@@ -655,6 +663,7 @@ def get_facility_history(facility_name: str) -> dict:
                 "meeting_target": row["meeting_target"],
                 "below_target": row["below_target"],
                 "missing_data": row["missing_data"],
+                "not_applicable": row.get("not_applicable", 0) or 0,
                 "proxy_data": row["proxy_data"],
                 "readiness_pct": row["readiness_pct"],
                 "verdict": row["verdict"],
@@ -680,7 +689,7 @@ def get_facility_history_by_id(facility_id: int) -> dict:
 
     cur.execute("""
         SELECT quarter, total_kpis, calculable, meeting_target, below_target,
-               missing_data, proxy_data, readiness_pct, verdict
+               missing_data, not_applicable, proxy_data, readiness_pct, verdict
         FROM jawda_summaries
         WHERE facility_id = %s
         ORDER BY quarter
@@ -729,6 +738,7 @@ def get_facility_history_by_id(facility_id: int) -> dict:
                 "meeting_target": row["meeting_target"],
                 "below_target": row["below_target"],
                 "missing_data": row["missing_data"],
+                "not_applicable": row.get("not_applicable", 0) or 0,
                 "proxy_data": row["proxy_data"],
                 "readiness_pct": row["readiness_pct"],
                 "verdict": row["verdict"],
