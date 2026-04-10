@@ -5,6 +5,7 @@ import { Upload, FileText, ChevronRight, AlertCircle, Shield, Activity,
 import { api } from '../utils/api'
 import { getErrorMessage } from '../utils/errors'
 import ColumnMappingReview from '../components/ColumnMappingReview'
+import { useI18n } from '../utils/i18n'
 
 /* ── File Slot Component ─────────────────────────────────────────────── */
 
@@ -86,6 +87,7 @@ function generateQuarterOptions(existingQuarters) {
 /* ── Main Upload Page ───────────────────────────────────────────────── */
 
 export default function UploadPage({ onResults, facility: facilityProp, existingQuarters = [], savedColMapping = null }) {
+  const { t } = useI18n()
   const [mode, setMode] = useState(null) // null = picker, 'current' | 'historical'
   const [selectedQuarter, setSelectedQuarter] = useState('')
   const [files, setFiles] = useState({ kpiData: null, visitDetails: null, timeData: null, eclaims: null })
@@ -358,9 +360,9 @@ export default function UploadPage({ onResults, facility: facilityProp, existing
                   : 'bg-gradient-to-r from-navy-500 via-navy-400 to-navy-500 bg-[length:200%_100%] text-white shadow-elevated hover:shadow-card-hover hover:bg-right'
                 }`}>
               {calculating ? (
-                <><span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> Calculating {quarter ? `for ${quarter}` : ''}...</>
+                <><span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> {t('upload.calculating')} {quarter ? `for ${quarter}` : ''}...</>
               ) : (
-                <>Calculate KPIs {quarter ? `for ${quarter}` : ''} <ChevronRight size={16} /></>
+                <>{t('upload.calculate')} {quarter ? `for ${quarter}` : ''} <ChevronRight size={16} /></>
               )}
             </button>
           </div>
@@ -391,7 +393,7 @@ export default function UploadPage({ onResults, facility: facilityProp, existing
           </div>
 
           <div className="bg-white rounded-2xl shadow-elevated border border-gray-100/80 p-7">
-            <h2 className="text-sm font-bold text-navy-500 mb-1">Upload Data Files</h2>
+            <h2 className="text-sm font-bold text-navy-500 mb-1">{t('upload.upload_files')}</h2>
             <p className="text-xs text-gray-500 mb-5">KPI Data is required. Other files add more KPI coverage.</p>
 
             <div className="space-y-3">
@@ -445,9 +447,9 @@ export default function UploadPage({ onResults, facility: facilityProp, existing
                   : 'bg-gradient-to-r from-navy-500 via-navy-400 to-navy-500 bg-[length:200%_100%] text-white shadow-elevated hover:shadow-card-hover hover:bg-right'
                 }`}>
               {loading ? (
-                <><span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> Validating files...</>
+                <><span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> {t('upload.validating')}</>
               ) : (
-                <>Upload & Validate <ChevronRight size={16} /></>
+                <>{t('upload.validate')} <ChevronRight size={16} /></>
               )}
             </button>
 
@@ -455,7 +457,7 @@ export default function UploadPage({ onResults, facility: facilityProp, existing
               Data stays in UAE (ADHICS compliant) · CSV and Excel accepted ·{' '}
                 <a href={`${import.meta.env.VITE_API_URL ?? ''}/api/template/download`}
                   className="text-teal-500 hover:text-teal-600 font-bold underline">
-                  Download blank template
+                  {t('upload.template')}
                 </a>
             </p>
           </div>
@@ -476,7 +478,7 @@ export default function UploadPage({ onResults, facility: facilityProp, existing
             <Upload size={24} className="text-teal-500" />
           </div>
           <div>
-            <h1 className="text-2xl font-black text-navy-500">Upload & Calculate</h1>
+            <h1 className="text-2xl font-black text-navy-500">{t('upload.title')}</h1>
             <p className="text-sm text-gray-500">{facilityProp || 'Your clinic'} · DOH Jawda V2 2026</p>
           </div>
         </div>
@@ -489,7 +491,7 @@ export default function UploadPage({ onResults, facility: facilityProp, existing
             <div className="w-12 h-12 bg-gradient-to-br from-teal-50 to-emerald-50 rounded-xl flex items-center justify-center mb-4 group-hover:scale-105 transition-transform">
               <CalendarPlus size={22} className="text-teal-500" />
             </div>
-            <h2 className="text-lg font-black text-navy-500 mb-1">Current Quarter</h2>
+            <h2 className="text-lg font-black text-navy-500 mb-1">{t('upload.current_quarter')}</h2>
             <p className="text-xs text-gray-500 leading-relaxed">
               Upload this quarter's data files. The quarter will be auto-detected from dates in your data.
             </p>
@@ -499,7 +501,7 @@ export default function UploadPage({ onResults, facility: facilityProp, existing
             <div className="w-12 h-12 bg-gradient-to-br from-blue-50 to-indigo-50 rounded-xl flex items-center justify-center mb-4">
               <History size={22} className="text-blue-500" />
             </div>
-            <h2 className="text-lg font-black text-navy-500 mb-1">Historical Quarter</h2>
+            <h2 className="text-lg font-black text-navy-500 mb-1">{t('upload.historical')}</h2>
             <p className="text-xs text-gray-500 leading-relaxed mb-4">
               Upload data for a past quarter to build your trend history.
             </p>
@@ -531,7 +533,7 @@ export default function UploadPage({ onResults, facility: facilityProp, existing
         {/* Existing quarters */}
         {existingQuarters.length > 0 && (
           <div className="bg-white rounded-2xl border border-gray-100 shadow-card p-6 mb-8">
-            <h3 className="text-xs font-bold text-navy-500 uppercase tracking-wider mb-3">Quarters on File</h3>
+            <h3 className="text-xs font-bold text-navy-500 uppercase tracking-wider mb-3">{t('upload.quarters_on_file')}</h3>
             <div className="flex flex-wrap gap-2">
               {existingQuarters.map(q => (
                 <div key={q} className="flex items-center gap-2 px-3 py-2 rounded-xl bg-teal-50 border border-teal-100">
@@ -581,11 +583,11 @@ export default function UploadPage({ onResults, facility: facilityProp, existing
         <div className="mt-10 flex items-center justify-center gap-6 text-xs text-gray-400">
           <div className="flex items-center gap-1.5">
             <Shield size={13} className="text-teal-400" />
-            <span className="font-medium">ADHICS Compliant</span>
+            <span className="font-medium">{t('misc.adhics')}</span>
           </div>
           <div className="flex items-center gap-1.5">
             <Activity size={13} className="text-teal-400" />
-            <span className="font-medium">DOH V2 2026</span>
+            <span className="font-medium">{t('misc.doh_v2')}</span>
           </div>
         </div>
       </div>

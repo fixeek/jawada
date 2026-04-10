@@ -3,6 +3,7 @@ import { ArrowLeft, ScrollText, CheckCircle, XCircle, AlertTriangle, Target,
          FileText, Clock, Shield, ChevronDown, ChevronRight, Building,
          CalendarDays, Database, Activity, Printer } from 'lucide-react'
 import { api } from '../utils/api'
+import { useI18n } from '../utils/i18n'
 
 const KPI_LABELS = {
   OMC001: 'Asthma Medication Ratio',
@@ -173,6 +174,7 @@ function AuditEntry({ entry, index }) {
 }
 
 export default function AuditPage({ facility, onBack }) {
+  const { t } = useI18n()
   const [entries, setEntries] = useState(null)
   const [loading, setLoading] = useState(true)
 
@@ -203,7 +205,7 @@ export default function AuditPage({ facility, onBack }) {
       <div className="bg-white border-b border-gray-100 px-6 py-3 flex items-center justify-between sticky top-0 z-10">
         <div className="flex items-center gap-3">
           <ScrollText size={16} className="text-indigo-500" />
-          <span className="text-sm font-bold text-navy-500">Audit Trail</span>
+          <span className="text-sm font-bold text-navy-500">{t('audit.title')}</span>
         </div>
         <button onClick={handlePrint}
           className="flex items-center gap-2 text-xs px-3 py-2 bg-gray-50 hover:bg-gray-100
@@ -221,7 +223,7 @@ export default function AuditPage({ facility, onBack }) {
               <ScrollText size={24} className="text-indigo-500" />
             </div>
             <div>
-              <h1 className="text-2xl sm:text-3xl font-black text-navy-500 tracking-tight">Audit Trail</h1>
+              <h1 className="text-2xl sm:text-3xl font-black text-navy-500 tracking-tight">{t('audit.title')}</h1>
               <p className="text-sm text-gray-500 mt-0.5">
                 Complete traceability for DOH Jawda Data Certification (JDC) compliance
               </p>

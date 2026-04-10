@@ -7,6 +7,7 @@ import { useI18n } from '../utils/i18n'
 const BASE = import.meta.env.VITE_API_URL || ''
 
 function ChangePasswordSection() {
+  const { t } = useI18n()
   const [newPassword, setNewPassword] = useState('')
   const [confirm, setConfirm] = useState('')
   const [saving, setSaving] = useState(false)
@@ -29,17 +30,17 @@ function ChangePasswordSection() {
   return (
     <div className="bg-white rounded-2xl border border-gray-100 shadow-card p-6">
       <h3 className="text-sm font-bold text-navy-500 mb-4 flex items-center gap-2">
-        <KeyRound size={14} className="text-violet-500" /> Change Password
+        <KeyRound size={14} className="text-violet-500" /> {t('settings.change_password')}
       </h3>
       <form onSubmit={handleChange} className="space-y-3">
         <div>
-          <label className="block text-[11px] font-bold text-navy-500 mb-1 uppercase tracking-wider">New Password</label>
+          <label className="block text-[11px] font-bold text-navy-500 mb-1 uppercase tracking-wider">{t('settings.new_password')}</label>
           <input type="password" value={newPassword} onChange={e => setNewPassword(e.target.value)}
             minLength="8" required placeholder="Min 8 characters"
             className="w-full bg-navy-50/40 border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-400/15" />
         </div>
         <div>
-          <label className="block text-[11px] font-bold text-navy-500 mb-1 uppercase tracking-wider">Confirm Password</label>
+          <label className="block text-[11px] font-bold text-navy-500 mb-1 uppercase tracking-wider">{t('settings.confirm_password')}</label>
           <input type="password" value={confirm} onChange={e => setConfirm(e.target.value)}
             minLength="8" required placeholder="Re-enter password"
             className="w-full bg-navy-50/40 border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-teal-400 focus:ring-2 focus:ring-teal-400/15" />
@@ -52,7 +53,7 @@ function ChangePasswordSection() {
         )}
         <button type="submit" disabled={saving}
           className="flex items-center gap-2 bg-gradient-to-r from-navy-500 to-navy-400 text-white font-bold text-sm px-5 py-2.5 rounded-xl shadow-card disabled:opacity-50">
-          {saving ? 'Saving...' : <><Save size={14} /> Change Password</>}
+          {saving ? 'Saving...' : <><Save size={14} /> {t('settings.change_password')}</>}
         </button>
       </form>
     </div>
@@ -60,6 +61,7 @@ function ChangePasswordSection() {
 }
 
 export default function SettingsPage({ user }) {
+  const { lang, setLang, t } = useI18n()
   const isSA = isSuperAdmin(user)
   const isCA = isClinicAdmin(user)
 
@@ -70,7 +72,7 @@ export default function SettingsPage({ user }) {
           <Settings size={24} className="text-gray-500" />
         </div>
         <div>
-          <h1 className="text-2xl font-black text-navy-500 tracking-tight">Settings</h1>
+          <h1 className="text-2xl font-black text-navy-500 tracking-tight">{t('settings.title')}</h1>
           <p className="text-sm text-gray-500">{isSA ? 'Platform configuration and your account' : 'Your account and clinic preferences'}</p>
         </div>
       </div>
@@ -79,7 +81,7 @@ export default function SettingsPage({ user }) {
         {/* Account info */}
         <div className="bg-white rounded-2xl border border-gray-100 shadow-card p-6">
           <h3 className="text-sm font-bold text-navy-500 mb-4 flex items-center gap-2">
-            <UserIcon size={14} className="text-blue-500" /> Your Account
+            <UserIcon size={14} className="text-blue-500" /> {t('settings.account')}
           </h3>
           <div className="space-y-3 text-sm">
             {[
@@ -110,30 +112,25 @@ export default function SettingsPage({ user }) {
         <ChangePasswordSection />
 
         {/* Language */}
-        {(() => {
-          const { lang, setLang, t } = useI18n()
-          return (
-            <div className="bg-white rounded-2xl border border-gray-100 shadow-card p-6">
-              <h3 className="text-sm font-bold text-navy-500 mb-4 flex items-center gap-2">
-                <Globe size={14} className="text-indigo-500" /> {t('settings.language')}
-              </h3>
-              <div className="flex gap-3">
-                <button onClick={() => setLang('en')}
-                  className={`flex-1 py-3 rounded-xl border-2 font-bold text-sm transition-all ${
-                    lang === 'en' ? 'border-teal-400 bg-teal-50 text-teal-700' : 'border-gray-200 text-gray-500 hover:border-gray-300'
-                  }`}>
-                  🇬🇧 English
-                </button>
-                <button onClick={() => setLang('ar')}
-                  className={`flex-1 py-3 rounded-xl border-2 font-bold text-sm transition-all ${
-                    lang === 'ar' ? 'border-teal-400 bg-teal-50 text-teal-700' : 'border-gray-200 text-gray-500 hover:border-gray-300'
-                  }`}>
-                  🇦🇪 العربية
-                </button>
-              </div>
-            </div>
-          )
-        })()}
+        <div className="bg-white rounded-2xl border border-gray-100 shadow-card p-6">
+          <h3 className="text-sm font-bold text-navy-500 mb-4 flex items-center gap-2">
+            <Globe size={14} className="text-indigo-500" /> {t('settings.language')}
+          </h3>
+          <div className="flex gap-3">
+            <button onClick={() => setLang('en')}
+              className={`flex-1 py-3 rounded-xl border-2 font-bold text-sm transition-all ${
+                lang === 'en' ? 'border-teal-400 bg-teal-50 text-teal-700' : 'border-gray-200 text-gray-500 hover:border-gray-300'
+              }`}>
+              English
+            </button>
+            <button onClick={() => setLang('ar')}
+              className={`flex-1 py-3 rounded-xl border-2 font-bold text-sm transition-all ${
+                lang === 'ar' ? 'border-teal-400 bg-teal-50 text-teal-700' : 'border-gray-200 text-gray-500 hover:border-gray-300'
+              }`}>
+              العربية
+            </button>
+          </div>
+        </div>
 
         {/* Super admin sections */}
         {isSA && (

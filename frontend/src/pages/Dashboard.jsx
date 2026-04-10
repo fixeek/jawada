@@ -15,6 +15,7 @@ import DoctorBreakdown from '../components/DoctorBreakdown'
 import DataQualityTrend from '../components/DataQualityTrend'
 import SmartRecommendations from '../components/SmartRecommendations'
 import PredictionBanner from '../components/PredictionBanner'
+import { useI18n } from '../utils/i18n'
 
 const SUBMIT_BASE = import.meta.env.VITE_API_URL || ''
 
@@ -27,6 +28,7 @@ const STATUS_STEPS = [
 ]
 
 function SubmissionTracker({ quarter, submission, onUpdate }) {
+  const { t } = useI18n()
   const currentStatus = submission?.status || 'calculated'
   const currentIdx = STATUS_STEPS.findIndex(s => s.value === currentStatus)
 
@@ -44,7 +46,7 @@ function SubmissionTracker({ quarter, submission, onUpdate }) {
   return (
     <div className="bg-white rounded-2xl border border-gray-100 shadow-card p-5 mb-6">
       <div className="flex items-center justify-between mb-4">
-        <h3 className="text-xs font-bold text-navy-500 uppercase tracking-wider">Submission Status — {quarter}</h3>
+        <h3 className="text-xs font-bold text-navy-500 uppercase tracking-wider">{t('dashboard.submission_status')} — {quarter}</h3>
         {submission?.updated_by && (
           <span className="text-[9px] text-gray-400">
             Updated by {submission.updated_by} · {submission.updated_at ? new Date(submission.updated_at).toLocaleDateString('en-GB') : ''}
@@ -73,7 +75,7 @@ function SubmissionTracker({ quarter, submission, onUpdate }) {
       {nextStep && (
         <button onClick={() => advanceStatus(nextStep.value)}
           className="text-xs font-bold text-teal-600 hover:text-teal-700 bg-teal-50 hover:bg-teal-100 px-4 py-2 rounded-lg border border-teal-100 transition-colors">
-          Mark as {nextStep.label}
+          {t('submissions.mark_as')} {t(`submissions.${nextStep.value}`, nextStep.label)}
         </button>
       )}
       {!nextStep && currentStatus === 'accepted' && (
@@ -88,6 +90,7 @@ function SubmissionTracker({ quarter, submission, onUpdate }) {
 /* ── Readiness Verdict ─────────────────────────────────────────────────────── */
 
 function ReadinessVerdict({ summary, results }) {
+  const { t } = useI18n()
   if (!summary) return null
   const { meeting_target, below_target, missing_data, calculable, readiness_pct, verdict } = summary
   const na = summary.not_applicable || 0
@@ -95,20 +98,20 @@ function ReadinessVerdict({ summary, results }) {
 
   // Build a concise breakdown: "1 passing · 3 below target · 4 N/A"
   const parts = []
-  if (meeting_target > 0) parts.push(`${meeting_target} passing`)
-  if (below_target > 0) parts.push(`${below_target} below target`)
-  if (missing_data > 0) parts.push(`${missing_data} insufficient data`)
-  if (na > 0) parts.push(`${na} not applicable`)
+  if (meeting_target > 0) parts.push(`${meeting_target} ${t('verdict.passing')}`)
+  if (below_target > 0) parts.push(`${below_target} ${t('verdict.below')}`)
+  if (missing_data > 0) parts.push(`${missing_data} ${t('verdict.insufficient')}`)
+  if (na > 0) parts.push(`${na} ${t('verdict.na')}`)
   const breakdown = parts.join(' · ')
 
   const cfg = {
     ready:     { icon: ShieldCheck, color: 'text-emerald-700', bg: 'from-emerald-50 to-green-50/50', border: 'border-emerald-100',
-                 headline: 'Ready for Jawda Submission', sub: `All applicable KPIs meet DOH targets. ${breakdown}` },
+                 headline: t('verdict.ready'), sub: `All applicable KPIs meet DOH targets. ${breakdown}` },
     attention: { icon: ShieldAlert, color: 'text-amber-700',   bg: 'from-amber-50 to-orange-50/30',  border: 'border-amber-100',
                  headline: `${below_target + missing_data} of 8 KPIs need attention`,
-                 sub: `${meeting_target} of 8 KPIs passing. ${breakdown}` },
+                 sub: `${meeting_target} ${t('verdict.of_8')}. ${breakdown}` },
     not_ready: { icon: ShieldX,     color: 'text-red-600',     bg: 'from-red-50 to-rose-50/30',      border: 'border-red-100',
-                 headline: 'Not ready for Jawda submission',
+                 headline: t('verdict.not_ready'),
                  sub: `${breakdown}. Review the action plan below.` },
   }[verdict] || { icon: ShieldAlert, color: 'text-amber-700', bg: 'from-amber-50 to-orange-50/30', border: 'border-amber-100',
                    headline: 'KPI Assessment', sub: breakdown }
@@ -128,7 +131,7 @@ function ReadinessVerdict({ summary, results }) {
         <div className="text-right hidden sm:block">
           <div className={`text-4xl font-black ${cfg.color} tracking-tight`}>{applicable > 0 ? `${readiness_pct}%` : '—'}</div>
           <div className="text-[10px] text-gray-400 font-bold uppercase tracking-wider mt-0.5">
-            {meeting_target} of 8 KPIs passing
+            {meeting_target} {t('verdict.of_8')}
           </div>
         </div>
       </div>
@@ -139,6 +142,7 @@ function ReadinessVerdict({ summary, results }) {
 /* ── Summary Cards ─────────────────────────────────────────────────────────── */
 
 function SummaryBar({ kpis }) {
+  const { t } = useI18n()
   const vals = Object.values(kpis)
   // Mutually exclusive categories — each KPI counted exactly once
   const na      = vals.filter(k => k.status === 'not_applicable').length
@@ -147,11 +151,11 @@ function SummaryBar({ kpis }) {
   const below   = vals.filter(k => k.meets_target === false && k.status !== 'proxy').length
   const proxy   = vals.filter(k => k.status === 'proxy' && k.meets_target !== true).length
   const items = [
-    { count: meeting, label: 'Meeting Target',  icon: CheckCircle,   bg: 'bg-emerald-50', numColor: 'text-emerald-700' },
-    { count: below,   label: 'Below Target',    icon: Target,        bg: 'bg-red-50',     numColor: 'text-red-600' },
-    ...(na > 0 ? [{ count: na, label: 'Not Applicable', icon: Minus, bg: 'bg-blue-50', numColor: 'text-blue-600' }] : []),
-    ...(proxy > 0 ? [{ count: proxy, label: 'Proxy Data', icon: AlertTriangle, bg: 'bg-amber-50', numColor: 'text-amber-700' }] : []),
-    ...(missing > 0 ? [{ count: missing, label: 'Insufficient Data', icon: XCircle, bg: 'bg-gray-50', numColor: 'text-gray-500' }] : []),
+    { count: meeting, label: t('kpi.meeting_target'),  icon: CheckCircle,   bg: 'bg-emerald-50', numColor: 'text-emerald-700' },
+    { count: below,   label: t('kpi.below_target'),    icon: Target,        bg: 'bg-red-50',     numColor: 'text-red-600' },
+    ...(na > 0 ? [{ count: na, label: t('kpi.not_applicable'), icon: Minus, bg: 'bg-blue-50', numColor: 'text-blue-600' }] : []),
+    ...(proxy > 0 ? [{ count: proxy, label: t('kpi.proxy_data'), icon: AlertTriangle, bg: 'bg-amber-50', numColor: 'text-amber-700' }] : []),
+    ...(missing > 0 ? [{ count: missing, label: t('kpi.insufficient_data'), icon: XCircle, bg: 'bg-gray-50', numColor: 'text-gray-500' }] : []),
   ]
   return (
     <div className={`grid gap-4 ${items.length <= 3 ? 'grid-cols-3' : items.length === 4 ? 'grid-cols-4' : 'grid-cols-5'}`}>
@@ -175,6 +179,7 @@ function SummaryBar({ kpis }) {
 /* ── Jawda Portal View ─────────────────────────────────────────────────────── */
 
 function JawdaPortalView({ kpis, facility, quarter }) {
+  const { t } = useI18n()
   const [open, setOpen] = useState(false)
   const [copied, setCopied] = useState(null)
   const entries = Object.entries(kpis).filter(([id]) => !id.startsWith('ERROR'))
@@ -202,7 +207,7 @@ function JawdaPortalView({ kpis, facility, quarter }) {
               <ExternalLink size={18} className="text-teal-300" />
             </div>
             <div className="text-left">
-              <h3 className="text-white font-bold text-sm">Copy to Jawda Portal</h3>
+              <h3 className="text-white font-bold text-sm">{t('dashboard.copy_portal')}</h3>
               <p className="text-white/50 text-xs mt-0.5">
                 Numerator & denominator values ready to enter at bpmweb.doh.gov.ae
               </p>
@@ -221,7 +226,7 @@ function JawdaPortalView({ kpis, facility, quarter }) {
             <button onClick={copyAll}
               className="flex items-center gap-1.5 text-[10px] font-bold text-teal-600 hover:text-teal-700 bg-teal-50 px-3 py-1.5 rounded-lg transition-colors">
               <Copy size={11} />
-              {copied === 'all' ? 'Copied!' : 'Copy All'}
+              {copied === 'all' ? t('misc.copied') : t('misc.copy_all')}
             </button>
           </div>
           <table className="w-full text-xs">
@@ -388,6 +393,7 @@ const ACTION_FIXES = {
 }
 
 function ActionPlan({ kpis }) {
+  const { t } = useI18n()
   const [open, setOpen] = useState(true)
   const entries = Object.entries(kpis).filter(([id]) => !id.startsWith('ERROR'))
 
@@ -404,9 +410,9 @@ function ActionPlan({ kpis }) {
         <div className="w-8 h-8 bg-gradient-to-br from-red-50 to-amber-50 rounded-lg flex items-center justify-center">
           <ClipboardList size={14} className="text-red-500" />
         </div>
-        <h2 className="text-sm font-bold text-navy-500 tracking-tight">Action Plan to Pass Jawda</h2>
+        <h2 className="text-sm font-bold text-navy-500 tracking-tight">{t('dashboard.action_plan')}</h2>
         <span className="text-[10px] font-bold text-red-600 bg-red-50 px-2.5 py-1 rounded-lg border border-red-100">
-          {totalActions} action{totalActions > 1 ? 's' : ''} required
+          {totalActions} {t('dashboard.action_required')}
         </span>
         <div className="flex-1 h-px bg-gradient-to-r from-gray-200 to-transparent ml-1" />
         <ChevronDown size={16} className={`text-gray-400 transition-transform ${open ? 'rotate-180' : ''}`} />
@@ -494,6 +500,7 @@ function ActionPlan({ kpis }) {
 /* ── Export Buttons ─────────────────────────────────────────────────────────── */
 
 function ExportButtons({ results, onPrint }) {
+  const { t } = useI18n()
   function exportAnalysis() {
     const rows = [['KPI ID','Title','Numerator','Denominator','Percentage','DOH Target','Pass/Fail','Status','Missing Fields']]
     Object.entries(results.kpis).forEach(([id, k]) => {
@@ -565,17 +572,17 @@ function ExportButtons({ results, onPrint }) {
         className="flex items-center gap-2 text-xs px-4 py-2 bg-navy-500 hover:bg-navy-400
           rounded-lg text-white font-bold transition-all shadow-card disabled:opacity-50">
         {pdfLoading ? <span className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : <Download size={13} />}
-        {pdfLoading ? 'Generating...' : 'PDF Report'}
+        {pdfLoading ? 'Generating...' : t('common.pdf_report')}
       </button>
       <button onClick={onPrint}
         className="flex items-center gap-2 text-xs px-3 py-2 bg-gray-50 hover:bg-gray-100
           rounded-lg text-gray-600 hover:text-navy-500 font-medium transition-all border border-gray-200">
-        <Printer size={13} /> Print
+        <Printer size={13} /> {t('common.print')}
       </button>
       <button onClick={exportAnalysis}
         className="flex items-center gap-2 text-xs px-3 py-2 bg-gray-50 hover:bg-gray-100
           rounded-lg text-gray-600 hover:text-navy-500 font-medium transition-all border border-gray-200">
-        <Download size={13} /> CSV
+        <Download size={13} /> {t('common.csv')}
       </button>
       <button onClick={exportSubmission}
         className="flex items-center gap-2 text-xs px-4 py-2 bg-teal-50 hover:bg-teal-100
@@ -752,6 +759,7 @@ function getDohDeadline() {
 /* ── Summary Strip ─────────────────────────────────────────────────────── */
 
 function SummaryStrip({ quarterCount, lastUpload, overallTrend, deadline }) {
+  const { t } = useI18n()
   return (
     <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-6">
       <div className="bg-white rounded-xl border border-gray-100 shadow-card px-4 py-3.5 flex items-center gap-3">
@@ -760,7 +768,7 @@ function SummaryStrip({ quarterCount, lastUpload, overallTrend, deadline }) {
         </div>
         <div>
           <div className="text-sm font-black text-navy-500">{quarterCount}</div>
-          <div className="text-[9px] text-gray-500 font-semibold uppercase tracking-wider">Quarters</div>
+          <div className="text-[9px] text-gray-500 font-semibold uppercase tracking-wider">{t('dashboard.quarters')}</div>
         </div>
       </div>
       <div className="bg-white rounded-xl border border-gray-100 shadow-card px-4 py-3.5 flex items-center gap-3">
@@ -769,7 +777,7 @@ function SummaryStrip({ quarterCount, lastUpload, overallTrend, deadline }) {
         </div>
         <div>
           <div className="text-sm font-black text-navy-500">{lastUpload || '—'}</div>
-          <div className="text-[9px] text-gray-500 font-semibold uppercase tracking-wider">Last Upload</div>
+          <div className="text-[9px] text-gray-500 font-semibold uppercase tracking-wider">{t('dashboard.last_upload')}</div>
         </div>
       </div>
       <div className="bg-white rounded-xl border border-gray-100 shadow-card px-4 py-3.5 flex items-center gap-3">
@@ -786,10 +794,10 @@ function SummaryStrip({ quarterCount, lastUpload, overallTrend, deadline }) {
             overallTrend === 'improving' ? 'text-emerald-600' :
             overallTrend === 'declining' ? 'text-red-500' : 'text-gray-500'
           }`}>
-            {overallTrend === 'improving' ? 'Improving' :
-             overallTrend === 'declining' ? 'Declining' : 'Stable'}
+            {overallTrend === 'improving' ? t('dashboard.improving') :
+             overallTrend === 'declining' ? t('dashboard.declining') : t('dashboard.stable')}
           </div>
-          <div className="text-[9px] text-gray-500 font-semibold uppercase tracking-wider">Overall Trend</div>
+          <div className="text-[9px] text-gray-500 font-semibold uppercase tracking-wider">{t('dashboard.overall_trend')}</div>
         </div>
       </div>
       <div className={`bg-white rounded-xl border shadow-card px-4 py-3.5 flex items-center gap-3 ${
@@ -823,6 +831,7 @@ function SummaryStrip({ quarterCount, lastUpload, overallTrend, deadline }) {
 }
 
 export default function Dashboard({ results, onBack, onAudit }) {
+  const { t } = useI18n()
   const [modal, setModal] = useState(null)
   const printRef = useRef()
   const [viewingQuarter, setViewingQuarter] = useState(null) // null = latest (from results)
@@ -889,8 +898,8 @@ export default function Dashboard({ results, onBack, onAudit }) {
       const d = new Date(uploaded)
       const now = new Date()
       const diffDays = Math.floor((now - d) / (1000 * 60 * 60 * 24))
-      if (diffDays === 0) return 'Today'
-      if (diffDays === 1) return 'Yesterday'
+      if (diffDays === 0) return t('common.today')
+      if (diffDays === 1) return t('common.yesterday')
       if (diffDays < 7) return `${diffDays}d ago`
       return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })
     }
@@ -909,10 +918,10 @@ export default function Dashboard({ results, onBack, onAudit }) {
       <div className="bg-white border-b border-gray-100 px-6 py-3 flex items-center justify-between sticky top-0 z-10">
         <div className="flex items-center gap-3">
           <Activity size={16} className="text-teal-500" />
-          <span className="text-sm font-bold text-navy-500">KPI Dashboard</span>
+          <span className="text-sm font-bold text-navy-500">{t('dashboard.title')}</span>
           {!isLatest && (
             <span className="text-[10px] font-bold text-amber-600 bg-amber-50 px-2 py-0.5 rounded border border-amber-100">
-              Viewing {activeQ}
+              {t('dashboard.viewing')} {activeQ}
             </span>
           )}
         </div>
@@ -941,7 +950,7 @@ export default function Dashboard({ results, onBack, onAudit }) {
                 {!isLatest && (
                   <button onClick={() => setViewingQuarter(null)}
                     className="text-[10px] font-bold text-teal-600 hover:text-teal-700 bg-teal-50 px-2 py-0.5 rounded border border-teal-100 transition-colors">
-                    Back to latest
+                    {t('dashboard.back_to_latest')}
                   </button>
                 )}
               </div>
@@ -1070,7 +1079,7 @@ export default function Dashboard({ results, onBack, onAudit }) {
               <ClipboardList size={16} className="text-gray-400" />
             </div>
             <div>
-              <p className="text-sm font-bold text-gray-500">Action Plan Not Applicable</p>
+              <p className="text-sm font-bold text-gray-500">{t('dashboard.action_not_applicable')}</p>
               <p className="text-xs text-gray-400">
                 {activeQ} is a past quarter. Action plans are only shown for the latest quarter
                 since historical submissions cannot be amended after DOH deadline.
@@ -1094,7 +1103,7 @@ export default function Dashboard({ results, onBack, onAudit }) {
 
         {/* Merge Diagnostics */}
         {results.merge_diagnostics?.length > 0 && isLatest && (
-          <Collapsible title="Data Merge Report" icon={Layers}>
+          <Collapsible title={t('dashboard.merge_report')} icon={Layers}>
             <div className="bg-white rounded-2xl border border-gray-100 shadow-card p-5 space-y-2">
               {results.merge_diagnostics.map((msg, i) => {
                 const isWarning = msg.startsWith('WARNING')
@@ -1135,7 +1144,7 @@ export default function Dashboard({ results, onBack, onAudit }) {
 
         {/* Compliance Calendar */}
         {quarterList.length > 0 && (
-          <Collapsible title="Compliance Calendar" icon={CalendarDays} defaultOpen={isLatest}>
+          <Collapsible title={t('dashboard.compliance_calendar')} icon={CalendarDays} defaultOpen={isLatest}>
             <ComplianceCalendar
               history={history}
               onSelectQuarter={q => setViewingQuarter(q === latestQ ? null : q)}
@@ -1144,12 +1153,12 @@ export default function Dashboard({ results, onBack, onAudit }) {
         )}
 
         {/* Data Quality — expanded by default, prominent heading */}
-        <Collapsible title="Data Quality & Readiness" icon={Activity} defaultOpen primary>
+        <Collapsible title={t('dashboard.data_quality')} icon={Activity} defaultOpen primary>
           <DataQuality quality={results.data_quality} />
         </Collapsible>
 
         {/* Column Mapping — collapsed by default */}
-        <Collapsible title="Column Mapping" icon={Layers}>
+        <Collapsible title={t('dashboard.column_mapping')} icon={Layers}>
           <div className="bg-white rounded-2xl border border-gray-100 shadow-card p-6">
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
               {Object.entries(results.col_mapping || {}).map(([field, col]) => (
@@ -1167,7 +1176,7 @@ export default function Dashboard({ results, onBack, onAudit }) {
         <div className="mt-14 text-center pb-8">
           <div className="w-16 h-px bg-gradient-to-r from-transparent via-gray-200 to-transparent mx-auto mb-4" />
           <p className="text-[11px] text-gray-300 font-medium">
-            Powered by TriZodiac — DOH Outpatient Medical Centers Jawda Guidance V2 2026
+            {t('dashboard.powered_by')} — DOH Outpatient Medical Centers Jawda Guidance V2 2026
           </p>
         </div>
       </div>

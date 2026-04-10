@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import axios from 'axios'
 import { Send, CheckCircle, Clock, AlertCircle, ExternalLink, Copy, CalendarDays } from 'lucide-react'
+import { useI18n } from '../utils/i18n'
 
 const BASE = import.meta.env.VITE_API_URL || ''
 
@@ -17,6 +18,7 @@ function getStatusIdx(status) {
 }
 
 export default function SubmissionsPage() {
+  const { t } = useI18n()
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
 
@@ -56,8 +58,8 @@ export default function SubmissionsPage() {
             <Send size={24} className="text-teal-500" />
           </div>
           <div>
-            <h1 className="text-2xl font-black text-navy-500">Submissions</h1>
-            <p className="text-sm text-gray-500">Track DOH Jawda submission status per quarter</p>
+            <h1 className="text-2xl font-black text-navy-500">{t('submissions.title')}</h1>
+            <p className="text-sm text-gray-500">{t('submissions.subtitle')}</p>
           </div>
         </div>
 
@@ -113,7 +115,7 @@ export default function SubmissionsPage() {
                     <div className="flex items-center justify-between text-[8px] font-bold uppercase tracking-wider">
                       {STATUS_STEPS.map((step, i) => (
                         <span key={step.value} className={i <= currentIdx ? 'text-navy-500' : 'text-gray-300'}>
-                          {step.label}
+                          {t(`submissions.${step.value}`, step.label)}
                         </span>
                       ))}
                     </div>
@@ -133,7 +135,7 @@ export default function SubmissionsPage() {
                       {nextStep && (
                         <button onClick={() => advanceStatus(q, nextStep.value)}
                           className="text-xs font-bold text-teal-600 hover:text-teal-700 bg-teal-50 hover:bg-teal-100 px-4 py-2 rounded-lg border border-teal-100 transition-colors">
-                          Mark as {nextStep.label}
+                          {t('submissions.mark_as')} {t(`submissions.${nextStep.value}`, nextStep.label)}
                         </button>
                       )}
                       {currentStatus === 'accepted' && (
@@ -143,7 +145,7 @@ export default function SubmissionsPage() {
                       )}
                       <a href="https://bpmweb.doh.gov.ae" target="_blank" rel="noopener noreferrer"
                         className="text-xs font-bold text-navy-500 hover:text-navy-600 bg-white px-4 py-2 rounded-lg border border-gray-200 hover:border-gray-300 transition-colors inline-flex items-center gap-1.5">
-                        <ExternalLink size={11} /> DOH Portal
+                        <ExternalLink size={11} /> {t('submissions.doh_portal')}
                       </a>
                     </div>
                   </div>

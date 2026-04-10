@@ -1,10 +1,12 @@
 import { useState, useEffect } from 'react'
 import axios from 'axios'
 import { FileText, Download, CalendarDays, Mail } from 'lucide-react'
+import { useI18n } from '../utils/i18n'
 
 const BASE = import.meta.env.VITE_API_URL || ''
 
 export default function ReportsPage() {
+  const { t } = useI18n()
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
   const [generating, setGenerating] = useState(null)
@@ -55,8 +57,8 @@ export default function ReportsPage() {
             <FileText size={24} className="text-violet-500" />
           </div>
           <div>
-            <h1 className="text-2xl font-black text-navy-500">Reports</h1>
-            <p className="text-sm text-gray-500">Generate branded PDF reports for management and DOH auditors</p>
+            <h1 className="text-2xl font-black text-navy-500">{t('reports.title')}</h1>
+            <p className="text-sm text-gray-500">{t('reports.subtitle')}</p>
           </div>
         </div>
 
@@ -97,8 +99,8 @@ export default function ReportsPage() {
                       bg-gradient-to-r from-navy-500 to-navy-400 text-white shadow-card
                       hover:shadow-elevated transition-all disabled:opacity-50">
                     {isGenerating
-                      ? <><span className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin" /> Generating...</>
-                      : <><Download size={14} /> Download PDF</>}
+                      ? <><span className="w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin" /> {t('reports.generating')}</>
+                      : <><Download size={14} /> {t('reports.download')}</>}
                   </button>
                   <button onClick={async () => {
                     setEmailing(q)
@@ -111,14 +113,14 @@ export default function ReportsPage() {
                   }} disabled={emailing === q}
                     className="flex items-center gap-2 text-xs font-bold px-4 py-2.5 rounded-xl
                       bg-white text-navy-500 border border-gray-200 hover:border-navy-300 transition-all disabled:opacity-50">
-                    {emailing === q ? '...' : <><Mail size={14} /> Email</>}
+                    {emailing === q ? '...' : <><Mail size={14} /> {t('reports.email')}</>}
                   </button>
                 </div>
               )
             })}
 
             <div className="mt-6 bg-navy-50/30 rounded-2xl border border-navy-100/30 p-5">
-              <h3 className="text-xs font-bold text-navy-500 uppercase tracking-wider mb-2">What's in the report?</h3>
+              <h3 className="text-xs font-bold text-navy-500 uppercase tracking-wider mb-2">{t('reports.whats_in')}</h3>
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-[10px] text-gray-600">
                 {['Executive Summary', 'Readiness Verdict', 'All 8 KPI Results',
                   'Pass/Fail per KPI', 'Action Plan', 'Quarter History',

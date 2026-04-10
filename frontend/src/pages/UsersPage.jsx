@@ -4,6 +4,7 @@ import { Users, Plus, X, AlertCircle, CheckCircle, Trash2, Mail, Shield, KeyRoun
 import { ROLE_LABELS, useAuth } from '../utils/auth'
 import { getErrorMessage } from '../utils/errors'
 import ResetPasswordModal from '../components/ResetPasswordModal'
+import { useI18n } from '../utils/i18n'
 
 const BASE = import.meta.env.VITE_API_URL || ''
 
@@ -14,6 +15,7 @@ const ROLE_OPTIONS = [
 ]
 
 function CreateUserModal({ onClose, onSuccess }) {
+  const { t } = useI18n()
   const [form, setForm] = useState({
     full_name: '', email: '', password: '', role: 'quality_officer',
   })
@@ -40,7 +42,7 @@ function CreateUserModal({ onClose, onSuccess }) {
       <div className="bg-white rounded-3xl shadow-modal w-full max-w-lg animate-scale-in" onClick={e => e.stopPropagation()}>
         <div className="bg-gradient-to-r from-navy-500 to-navy-400 px-7 py-5 flex items-center justify-between rounded-t-3xl">
           <div>
-            <h2 className="text-white font-bold text-lg">Add User</h2>
+            <h2 className="text-white font-bold text-lg">{t('users.add')}</h2>
             <p className="text-navy-200 text-xs mt-0.5">Create a new team member</p>
           </div>
           <button onClick={onClose} className="text-navy-300 hover:text-white w-9 h-9 rounded-xl hover:bg-white/10 flex items-center justify-center">
@@ -94,11 +96,11 @@ function CreateUserModal({ onClose, onSuccess }) {
           <div className="flex gap-3 pt-2">
             <button type="button" onClick={onClose}
               className="flex-1 py-3 rounded-xl border border-gray-200 text-gray-600 font-bold text-sm hover:bg-gray-50">
-              Cancel
+              {t('common.cancel')}
             </button>
             <button type="submit" disabled={loading}
               className="flex-1 py-3 rounded-xl bg-gradient-to-r from-navy-500 to-navy-400 text-white font-bold text-sm disabled:opacity-50">
-              {loading ? 'Creating...' : 'Add User'}
+              {loading ? 'Creating...' : t('users.add')}
             </button>
           </div>
         </form>
@@ -108,6 +110,7 @@ function CreateUserModal({ onClose, onSuccess }) {
 }
 
 export default function UsersPage() {
+  const { t } = useI18n()
   const { user: currentUser } = useAuth()
   const [users, setUsers] = useState(null)
   const [showCreate, setShowCreate] = useState(false)
@@ -140,13 +143,13 @@ export default function UsersPage() {
               <Users size={24} className="text-blue-500" />
             </div>
             <div>
-              <h1 className="text-2xl font-black text-navy-500">Users</h1>
+              <h1 className="text-2xl font-black text-navy-500">{t('users.title')}</h1>
               <p className="text-sm text-gray-500">Manage team members and their roles</p>
             </div>
           </div>
           <button onClick={() => setShowCreate(true)}
             className="flex items-center gap-2 bg-gradient-to-r from-navy-500 to-navy-400 text-white font-bold text-sm px-5 py-3 rounded-xl shadow-elevated hover:shadow-card-hover transition-all">
-            <Plus size={16} /> Add User
+            <Plus size={16} /> {t('users.add')}
           </button>
         </div>
 
@@ -163,10 +166,10 @@ export default function UsersPage() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="bg-navy-50/50">
-                  <th className="px-5 py-3 text-left text-[10px] font-bold text-navy-400 uppercase tracking-wider">Name</th>
-                  <th className="px-5 py-3 text-left text-[10px] font-bold text-navy-400 uppercase tracking-wider">Email</th>
-                  <th className="px-5 py-3 text-left text-[10px] font-bold text-navy-400 uppercase tracking-wider">Role</th>
-                  <th className="px-5 py-3 text-left text-[10px] font-bold text-navy-400 uppercase tracking-wider">Last Login</th>
+                  <th className="px-5 py-3 text-left text-[10px] font-bold text-navy-400 uppercase tracking-wider">{t('users.name')}</th>
+                  <th className="px-5 py-3 text-left text-[10px] font-bold text-navy-400 uppercase tracking-wider">{t('users.email')}</th>
+                  <th className="px-5 py-3 text-left text-[10px] font-bold text-navy-400 uppercase tracking-wider">{t('users.role')}</th>
+                  <th className="px-5 py-3 text-left text-[10px] font-bold text-navy-400 uppercase tracking-wider">{t('users.last_login')}</th>
                   <th className="px-5 py-3 w-10"></th>
                 </tr>
               </thead>
@@ -181,7 +184,7 @@ export default function UsersPage() {
                       </span>
                     </td>
                     <td className="px-5 py-3 text-xs text-gray-500">
-                      {u.last_login ? new Date(u.last_login).toLocaleDateString('en-GB') : 'Never'}
+                      {u.last_login ? new Date(u.last_login).toLocaleDateString('en-GB') : t('users.never')}
                     </td>
                     <td className="px-5 py-3">
                       {u.id !== currentUser?.id && (

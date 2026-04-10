@@ -2,8 +2,10 @@ import { useState } from 'react'
 import { Mail, Lock, AlertCircle, ChevronRight, Sparkles, Shield, Activity, Building } from 'lucide-react'
 import { useAuth } from '../utils/auth'
 import { getErrorMessage } from '../utils/errors'
+import { useI18n } from '../utils/i18n'
 
 export default function LoginPage() {
+  const { t } = useI18n()
   const { login } = useAuth()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -50,8 +52,8 @@ export default function LoginPage() {
 
               <div className="grid grid-cols-1 gap-3 mb-8">
                 {[
-                  { icon: Shield, label: 'ADHICS Compliant', sub: 'UAE data residency' },
-                  { icon: Activity, label: 'DOH V2 2026', sub: 'Latest Jawda guidance' },
+                  { icon: Shield, label: t('misc.adhics'), sub: 'UAE data residency' },
+                  { icon: Activity, label: t('misc.doh_v2'), sub: 'Latest Jawda guidance' },
                   { icon: Building, label: 'Multi-Clinic', sub: 'Per-facility isolation' },
                 ].map(({ icon: Icon, label, sub }) => (
                   <div key={label} className="flex items-center gap-3 bg-navy-50/40 rounded-xl p-3 border border-navy-100/30">
@@ -81,12 +83,12 @@ export default function LoginPage() {
               <div className="relative">
                 <div className="absolute -inset-px bg-gradient-to-b from-teal-200/20 via-transparent to-navy-100/20 rounded-[21px]" />
                 <div className="relative bg-white rounded-[20px] shadow-elevated border border-gray-100/80 p-8">
-                  <h2 className="text-xl font-black text-navy-500 mb-1">Sign In</h2>
+                  <h2 className="text-xl font-black text-navy-500 mb-1">{t('login.title')}</h2>
                   <p className="text-xs text-gray-500 mb-6">Enter your credentials to continue</p>
 
                   <form onSubmit={handleSubmit} className="space-y-4">
                     <div>
-                      <label className="block text-[11px] font-bold text-navy-500 mb-2 uppercase tracking-wider">Email</label>
+                      <label className="block text-[11px] font-bold text-navy-500 mb-2 uppercase tracking-wider">{t('login.email')}</label>
                       <div className="relative">
                         <Mail size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" />
                         <input
@@ -103,7 +105,7 @@ export default function LoginPage() {
                     </div>
 
                     <div>
-                      <label className="block text-[11px] font-bold text-navy-500 mb-2 uppercase tracking-wider">Password</label>
+                      <label className="block text-[11px] font-bold text-navy-500 mb-2 uppercase tracking-wider">{t('login.password')}</label>
                       <div className="relative">
                         <Lock size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-gray-400" />
                         <input
@@ -139,10 +141,10 @@ export default function LoginPage() {
                       {loading ? (
                         <>
                           <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
-                          Signing in...
+                          {t('login.signing_in')}
                         </>
                       ) : (
-                        <>Sign In <ChevronRight size={16} /></>
+                        <>{t('login.submit')} <ChevronRight size={16} /></>
                       )}
                     </button>
                   </form>
@@ -155,7 +157,7 @@ export default function LoginPage() {
 
               <div className="mt-8 text-center">
                 <p className="text-[11px] text-gray-400 font-medium">
-                  Powered by TriZodiac · ADHICS Compliant · UAE North
+                  {t('dashboard.powered_by')} · {t('misc.adhics')} · {t('misc.uae_north')}
                 </p>
               </div>
             </div>

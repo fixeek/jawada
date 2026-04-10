@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import axios from 'axios'
 import { BarChart3, TrendingUp, TrendingDown, Minus, Target, CheckCircle,
          AlertTriangle, XCircle, Filter } from 'lucide-react'
+import { useI18n } from '../utils/i18n'
 
 const BASE = import.meta.env.VITE_API_URL || ''
 
@@ -32,6 +33,7 @@ const FILTERS = [
 ]
 
 export default function KPIExplorerPage({ onSelectKPI }) {
+  const { t } = useI18n()
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
   const [filter, setFilter] = useState('all')
@@ -80,7 +82,7 @@ export default function KPIExplorerPage({ onSelectKPI }) {
               <BarChart3 size={24} className="text-blue-500" />
             </div>
             <div>
-              <h1 className="text-2xl font-black text-navy-500">KPI Explorer</h1>
+              <h1 className="text-2xl font-black text-navy-500">{t('explorer.title')}</h1>
               <p className="text-sm text-gray-500">All 8 DOH Jawda KPIs · V2 2026</p>
             </div>
           </div>
@@ -110,7 +112,7 @@ export default function KPIExplorerPage({ onSelectKPI }) {
                   ? 'bg-navy-500 text-white shadow-card'
                   : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
               }`}>
-              {f.label}
+              {f.id === 'all' ? t('explorer.all') : f.id === 'passing' ? t('explorer.filter_passing') : f.id === 'failing' ? t('explorer.filter_failing') : t('explorer.filter_na')}
             </button>
           ))}
           <span className="ml-auto text-[10px] text-gray-400 font-medium">
