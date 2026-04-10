@@ -1508,8 +1508,11 @@ async def calculate_multi(
 
                 _save_to_history(facility_name, prev_quarter_label, prev_results)
             except Exception as e:
-                # Previous quarter processing is best-effort, don't block current
-                pass
+                # Previous quarter processing is best-effort — log and surface but don't block
+                log.error(f"Previous quarter processing failed: {e}")
+                if "warnings" not in results:
+                    results["warnings"] = []
+                results["warnings"].append(f"Previous quarter comparison could not be processed: {str(e)[:200]}")
 
         # Attach full history for frontend
         history_key = facility_name.strip().lower()

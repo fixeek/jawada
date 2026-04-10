@@ -25,6 +25,20 @@ def get_conn():
     )
 
 
+from contextlib import contextmanager
+
+@contextmanager
+def db_cursor(dict_cursor=False):
+    """Context manager for safe DB access — always closes connection, even on errors."""
+    conn = get_conn()
+    cur = conn.cursor(cursor_factory=RealDictCursor if dict_cursor else None)
+    try:
+        yield conn, cur
+    finally:
+        cur.close()
+        conn.close()
+
+
 # NOTE: PostgreSQL Row-Level Security (RLS) is planned for a follow-up.
 # For now, multi-tenancy is enforced at the application layer via facility_id checks
 # in every query that filters by user.facility_id. RLS would require migrating every
@@ -199,36 +213,32 @@ def init_db():
     conn.close()
 
 
-def log_audit(facility_name: str, action: str, quarter: str = None,
+def log_audit(facility_name: str = None, action: str = "", quarter: str = None,
               details: dict = None, upload_id: int = None, user_email: str = None,
-              ip_address: str = None, user_agent: str = None):
+              ip_address: str = None, user_agent: str = None, facility_id: int = None):
     """Log an audit trail entry."""
-    conn = get_conn()
-    cur = conn.cursor()
-    facility_id = None
-    try:
-        name_lower = (facility_name or "").strip().lower()
-        if name_lower:
-            cur.execute("SELECT id FROM facilities WHERE name_lower = %s", (name_lower,))
-            row = cur.fetchone()
-            if row:
-                facility_id = row[0]
-    except:
-        pass
+    with db_cursor() as (conn, cur):
+        if not facility_id:
+            try:
+                name_lower = (facility_name or "").strip().lower()
+                if name_lower:
+                    cur.execute("SELECT id FROM facilities WHERE name_lower = %s", (name_lower,))
+                    row = cur.fetchone()
+                    if row:
+                        facility_id = row[0]
+            except:
+                pass
 
-    # Store user_agent in details JSON since we don't have a column for it
-    full_details = details or {}
-    if user_agent:
-        full_details["_user_agent"] = user_agent[:500]
+        full_details = details or {}
+        if user_agent:
+            full_details["_user_agent"] = user_agent[:500]
 
-    cur.execute("""
-        INSERT INTO audit_log (facility_id, upload_id, action, quarter, details, user_email, ip_address)
-        VALUES (%s, %s, %s, %s, %s, %s, %s)
-    """, (facility_id, upload_id, action, quarter,
-          json.dumps(full_details), user_email, ip_address))
-    conn.commit()
-    cur.close()
-    conn.close()
+        cur.execute("""
+            INSERT INTO audit_log (facility_id, upload_id, action, quarter, details, user_email, ip_address)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
+        """, (facility_id, upload_id, action, quarter,
+              json.dumps(full_details), user_email, ip_address))
+        conn.commit()
 
 
 def get_audit_log(facility_name: str, limit: int = 50) -> list:
@@ -801,15 +811,12 @@ def update_submission_status(facility_id: int, quarter: str, status: str,
     """Update or create submission status for a facility quarter."""
     if status not in SUBMISSION_STATUSES:
         raise ValueError(f"Invalid status: {status}. Must be one of: {SUBMISSION_STATUSES}")
-    conn = get_conn()
-    cur = conn.cursor()
-    cur.execute("""
-        INSERT INTO submission_status (facility_id, quarter, status, notes, updated_by, updated_at)
-        VALUES (%s, %s, %s, %s, %s, NOW())
-        ON CONFLICT (facility_id, quarter)
-        DO UPDATE SET status = EXCLUDED.status, notes = EXCLUDED.notes,
-                      updated_by = EXCLUDED.updated_by, updated_at = NOW()
-    """, (facility_id, quarter, status, notes, updated_by))
-    conn.commit()
-    cur.close()
-    conn.close()
+    with db_cursor() as (conn, cur):
+        cur.execute("""
+            INSERT INTO submission_status (facility_id, quarter, status, notes, updated_by, updated_at)
+            VALUES (%s, %s, %s, %s, %s, NOW())
+            ON CONFLICT (facility_id, quarter)
+            DO UPDATE SET status = EXCLUDED.status, notes = EXCLUDED.notes,
+                          updated_by = EXCLUDED.updated_by, updated_at = NOW()
+        """, (facility_id, quarter, status, notes, updated_by))
+        conn.commit()

@@ -912,11 +912,10 @@ def calc_omc005(df: pd.DataFrame, col_map: dict) -> KPIResult:
         except:
             pass
 
-    seen = set()
+    # Collect all qualifying rows per patient, then pick the most recent HbA1c
+    patient_data = {}  # pid -> {"hba1c": float|None, "date": datetime|None}
     for _, row in df.iterrows():
         pid = str(row.get(col_map.get("patient_id",""), row.name))
-        if pid in seen:
-            continue
 
         age = safe_age(
             row.get(age_col, "") if age_col else None,
@@ -928,7 +927,7 @@ def calc_omc005(df: pd.DataFrame, col_map: dict) -> KPIResult:
         # DOH V2: denominator requires 2+ visits in prior 9 months
         if check_visit_history and visit_index:
             try:
-                visit_date = pd.to_datetime(row.get(date_col, None))
+                visit_date = pd.to_datetime(row.get(date_col, None), dayfirst=True)
                 if pd.notna(visit_date):
                     prior = count_prior_visits_fast(visit_index, pid, visit_date, 9)
                     if prior < 2:
@@ -951,10 +950,29 @@ def calc_omc005(df: pd.DataFrame, col_map: dict) -> KPIResult:
         if row_icd_matches(row, col_map, DIABETES_STEROID_PREFIX):
             continue
 
-        seen.add(pid)
-        r.denominator += 1
-
         hba1c = safe_hba1c(row.get(hba1c_col, ""))
+        row_date = None
+        if date_col:
+            try:
+                row_date = pd.to_datetime(row.get(date_col), dayfirst=True)
+            except:
+                pass
+
+        # Keep this patient, update if this row has a more recent HbA1c
+        if pid not in patient_data:
+            patient_data[pid] = {"hba1c": hba1c, "date": row_date}
+        elif hba1c is not None:
+            existing = patient_data[pid]
+            # Prefer most recent date, or any HbA1c over None
+            if existing["hba1c"] is None:
+                patient_data[pid] = {"hba1c": hba1c, "date": row_date}
+            elif row_date and existing["date"] and row_date > existing["date"]:
+                patient_data[pid] = {"hba1c": hba1c, "date": row_date}
+
+    # Score each patient
+    for pid, info in patient_data.items():
+        r.denominator += 1
+        hba1c = info["hba1c"]
         if hba1c is not None:
             if hba1c <= HBAIC_THRESHOLD:
                 r.numerator += 1
@@ -994,6 +1012,22 @@ def calc_omc006(df: pd.DataFrame, col_map: dict) -> KPIResult:
                        "Official OMC006 requires confirmed hypertension diagnosis + 2 visits in prior 9 months.")
         r.status = "proxy"
 
+    # DOH V2: denominator requires 2+ visits in prior 9 months
+    pid_col = col_map.get("patient_id")
+    date_col = col_map.get("date_of_service")
+    can_check_visits = pid_col and date_col
+    visit_index = None
+    check_visit_history = False
+    if can_check_visits:
+        try:
+            all_dates = pd.to_datetime(df[date_col], errors='coerce').dropna()
+            data_span_days = (all_dates.max() - all_dates.min()).days
+            if data_span_days > 100:
+                visit_index = _build_visit_index(df, pid_col, date_col)
+                check_visit_history = True
+        except:
+            pass
+
     def _collect_bp_patients(use_icd_filter):
         """Iterate rows, optionally filtering by ICD (primary + secondary), return {pid: (sys, dia)}."""
         seen = {}
@@ -1018,6 +1052,16 @@ def calc_omc006(df: pd.DataFrame, col_map: dict) -> KPIResult:
                     is_htn = flag in ["YES", "Y", "TRUE", "1"]
                 if not is_htn:
                     continue
+
+            # 2-visit-in-9-months check
+            if check_visit_history and use_icd_filter:
+                try:
+                    visit_date = pd.to_datetime(row.get(date_col), dayfirst=True)
+                    prior = count_prior_visits_fast(pid, visit_date, visit_index)
+                    if prior < 2:
+                        continue
+                except:
+                    pass  # If date parsing fails, include the patient
 
             # Get BP — try separate columns first, then combined
             sys, dia = None, None
