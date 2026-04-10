@@ -1,4 +1,5 @@
-import { X, AlertTriangle, Info, TrendingUp, TrendingDown, Users, Target, CheckCircle, Calculator } from 'lucide-react'
+import { useState } from 'react'
+import { X, AlertTriangle, Info, TrendingUp, TrendingDown, Users, Target, CheckCircle, Calculator, SlidersHorizontal } from 'lucide-react'
 
 const OFFICIAL_DEFS = {
   OMC001: { threshold: 'Ratio >= 0.50', pop: 'Age 5-64, moderate-to-severe asthma (J45.40-J45.52)', needs: 'Prescription data — controller vs reliever drug units per patient per quarter. Pharmacy integration required.' },
@@ -10,6 +11,99 @@ const OFFICIAL_DEFS = {
   OMC007: { threshold: '>= 15 days opioids in 30 days OR >= 31 days in 62 days', pop: 'Age >= 18, new opioid prescription', needs: 'Days supplied, drug name, drug class, new-start date. Desired direction: LOWER.' },
   OMC008: { threshold: 'Both eGFR and uACR tested every 6 months', pop: 'Age >= 18, eGFR < 90 ml/min/1.73m2', needs: 'eGFR numeric result + uACR result with collection dates. Lab integration required.' },
 }
+
+/* ── What-If Simulator ─────────────────────────────────────────────────────── */
+
+function WhatIfSimulator({ kpi, direction }) {
+  const num = kpi.numerator || 0
+  const den = kpi.denominator || 1
+  const target = kpi.target || 0
+
+  // For "lower is better" KPIs, slider removes patients from numerator
+  // For "higher is better" KPIs, slider adds patients to numerator
+  const isLower = direction === 'lower'
+  const maxSlide = isLower ? num : (den - num)
+  const [delta, setDelta] = useState(0)
+
+  if (den === 0 || maxSlide <= 0) return null
+
+  const newNum = isLower ? num - delta : num + delta
+  const newPct = Math.round((newNum / den) * 1000) / 10
+  const wouldPass = isLower ? newPct <= target : newPct >= target
+  const currentPct = Math.round((num / den) * 1000) / 10
+
+  return (
+    <div className="bg-gradient-to-br from-navy-50/60 to-indigo-50/30 rounded-2xl p-6 border border-navy-100/30">
+      <div className="flex items-center gap-3 mb-4">
+        <div className="w-8 h-8 bg-white rounded-xl flex items-center justify-center shadow-sm">
+          <SlidersHorizontal size={14} className="text-indigo-500" />
+        </div>
+        <div>
+          <h4 className="text-sm font-bold text-navy-500">What-If Simulator</h4>
+          <p className="text-[10px] text-gray-500">
+            {isLower
+              ? 'Drag to see the effect of reducing patients from the risk group'
+              : 'Drag to see the effect of more patients meeting criteria'}
+          </p>
+        </div>
+      </div>
+
+      {/* Slider */}
+      <div className="mb-4">
+        <input type="range" min="0" max={maxSlide} value={delta}
+          onChange={e => setDelta(Number(e.target.value))}
+          className="w-full h-2 bg-gray-200 rounded-full appearance-none cursor-pointer
+            [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-5 [&::-webkit-slider-thumb]:h-5
+            [&::-webkit-slider-thumb]:bg-navy-500 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:shadow-md
+            [&::-webkit-slider-thumb]:cursor-grab" />
+        <div className="flex justify-between text-[9px] text-gray-400 font-bold mt-1">
+          <span>No change</span>
+          <span>{isLower ? `-${maxSlide}` : `+${maxSlide}`} patients</span>
+        </div>
+      </div>
+
+      {/* Result */}
+      <div className="bg-white rounded-xl p-4 flex items-center gap-6">
+        {/* Current */}
+        <div className="text-center flex-1">
+          <div className="text-lg font-black text-gray-400">{currentPct}%</div>
+          <div className="text-[9px] text-gray-400 font-bold uppercase">Current</div>
+          <div className="text-[9px] text-gray-400">{num}/{den}</div>
+        </div>
+
+        {/* Arrow */}
+        <div className="flex flex-col items-center">
+          <div className={`text-sm font-black ${delta > 0 ? 'text-navy-500' : 'text-gray-300'}`}>
+            {delta > 0 ? (isLower ? `−${delta}` : `+${delta}`) : '—'}
+          </div>
+          <div className="text-gray-300 text-lg">→</div>
+        </div>
+
+        {/* Projected */}
+        <div className="text-center flex-1">
+          <div className={`text-2xl font-black ${
+            delta === 0 ? 'text-gray-300' :
+            wouldPass ? 'text-emerald-600' : 'text-red-500'
+          }`}>
+            {delta > 0 ? `${newPct}%` : '—'}
+          </div>
+          <div className="text-[9px] text-gray-500 font-bold uppercase">Projected</div>
+          {delta > 0 && (
+            <div className={`text-[10px] font-bold mt-1 px-2 py-0.5 rounded inline-block ${
+              wouldPass
+                ? 'text-emerald-700 bg-emerald-50 border border-emerald-100'
+                : 'text-red-600 bg-red-50 border border-red-100'
+            }`}>
+              {wouldPass ? 'PASS' : 'Still below target'}
+            </div>
+          )}
+          {delta > 0 && <div className="text-[9px] text-gray-400 mt-0.5">{newNum}/{den}</div>}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 
 export default function KPIModal({ data, onClose }) {
   if (!data) return null
@@ -175,6 +269,11 @@ export default function KPIModal({ data, onClose }) {
                 </div>
               )
             })()
+          )}
+
+          {/* What-If Simulator */}
+          {kpi.denominator > 0 && kpi.meets_target !== true && kpi.status !== 'insufficient_data' && (
+            <WhatIfSimulator kpi={kpi} direction={direction} />
           )}
 
           {/* Official definition */}

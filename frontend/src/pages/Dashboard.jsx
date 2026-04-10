@@ -10,6 +10,7 @@ import KPIModal from '../components/KPIModal'
 import DataQuality from '../components/DataQuality'
 import PrintReport from '../components/PrintReport'
 import TrendChart from '../components/TrendChart'
+import ComplianceCalendar from '../components/ComplianceCalendar'
 
 const SUBMIT_BASE = import.meta.env.VITE_API_URL || ''
 
@@ -1017,6 +1018,16 @@ export default function Dashboard({ results, onBack, onAudit }) {
               <p key={id} className="text-xs text-red-700">{id}: {e.error}</p>
             ))}
           </div>
+        )}
+
+        {/* Compliance Calendar */}
+        {quarterList.length > 0 && (
+          <Collapsible title="Compliance Calendar" icon={CalendarDays} defaultOpen={isLatest}>
+            <ComplianceCalendar
+              history={history}
+              onSelectQuarter={q => setViewingQuarter(q === latestQ ? null : q)}
+            />
+          </Collapsible>
         )}
 
         {/* Data Quality — expanded by default, prominent heading */}
