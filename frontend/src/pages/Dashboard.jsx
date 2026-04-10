@@ -1005,8 +1005,23 @@ export default function Dashboard({ results, onBack, onAudit }) {
           prevData={prevData}
         />
 
-        {/* Action Plan */}
-        <ActionPlan kpis={activeKpis} />
+        {/* Action Plan — only for the latest quarter (past quarters can't be fixed) */}
+        {isLatest ? (
+          <ActionPlan kpis={activeKpis} />
+        ) : (
+          <div className="mt-8 bg-gray-50 border border-gray-100 rounded-2xl p-5 flex items-center gap-4">
+            <div className="w-9 h-9 bg-gray-100 rounded-xl flex items-center justify-center flex-shrink-0">
+              <ClipboardList size={16} className="text-gray-400" />
+            </div>
+            <div>
+              <p className="text-sm font-bold text-gray-500">Action Plan Not Applicable</p>
+              <p className="text-xs text-gray-400">
+                {activeQ} is a past quarter. Action plans are only shown for the latest quarter
+                since historical submissions cannot be amended after DOH deadline.
+              </p>
+            </div>
+          </div>
+        )}
 
         {/* Errors */}
         {errorEntries.length > 0 && (
