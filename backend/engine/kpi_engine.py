@@ -1561,7 +1561,17 @@ def run_all_kpis(df: pd.DataFrame, quarter: str = None, col_mapping_override: di
     col_mapping_override: if provided, use this mapping instead of auto-detection.
     """
     df = normalise_df(df)
-    col_map = col_mapping_override if col_mapping_override else map_columns(df)
+    if col_mapping_override:
+        # Filter override to only include columns that actually exist in this dataframe
+        actual_cols = set(df.columns)
+        col_map = {k: v for k, v in col_mapping_override.items() if v in actual_cols}
+        # Fill in any missing fields from auto-detection
+        auto_map = map_columns(df)
+        for k, v in auto_map.items():
+            if k not in col_map and v:
+                col_map[k] = v
+    else:
+        col_map = map_columns(df)
 
     results = {
         "quarter":      quarter or "Unknown",
