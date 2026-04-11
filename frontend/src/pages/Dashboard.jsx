@@ -863,14 +863,15 @@ export default function Dashboard({ results, onBack, onAudit }) {
   // History / trend data
   const history = results.history || {}
   const quarterList = Object.keys(history).sort()
-  const latestQ = results.quarter
+  // latestQ = chronologically latest quarter, not last uploaded
+  const latestQ = quarterList.length > 0 ? quarterList[quarterList.length - 1] : results.quarter
   const activeQ = viewingQuarter || latestQ
 
-  // Build the active quarter's data — either from results (latest) or from history
+  // Build the active quarter's data — always from history for consistency
+  const activeKpis = history[activeQ]?.kpis || results.kpis || {}
+  const activeSummary = history[activeQ]?.jawda_summary || results.jawda_summary || {}
+  const activeRecords = history[activeQ]?.total_records || results.total_records || 0
   const isLatest = activeQ === latestQ
-  const activeKpis = isLatest ? (results.kpis || {}) : (history[activeQ]?.kpis || {})
-  const activeSummary = isLatest ? results.jawda_summary : (history[activeQ]?.jawda_summary || {})
-  const activeRecords = isLatest ? results.total_records : (history[activeQ]?.total_records || 0)
 
   const kpiEntries = Object.entries(activeKpis).filter(([id]) => !id.startsWith('ERROR'))
   const errorEntries = Object.entries(activeKpis).filter(([id]) => id.startsWith('ERROR'))
