@@ -2333,6 +2333,8 @@ async def calculate_multi(
     except HTTPException:
         raise
     except Exception as e:
+        import traceback
+        log.error(f"Calculate-multi failed: {e}\n{traceback.format_exc()}")
         raise HTTPException(500, f"Error processing files: {str(e)}")
     finally:
         all_paths = list(paths.values()) + list(session.get("prev_paths", {}).values())
